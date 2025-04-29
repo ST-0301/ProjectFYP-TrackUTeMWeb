@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue';
-import { addDoc, deleteDoc, updateDoc, onSnapshot, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { deleteDoc, updateDoc, setDoc, onSnapshot, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { driversCollection } from '@/firebase';
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
@@ -15,7 +15,6 @@ const editingDriver = ref(false);
 const currentDriver = ref(createDefaultDriver());
 const driverToDelete = ref(null);
 const errors = ref({
-    id: '',
     name: '',
     email: '',
     phone: '',
@@ -40,6 +39,7 @@ onMounted(() => {
 // Helper functions
 function createDefaultDriver() {
     return {
+        driverId: "",
         name: "",
         email: "",
         phone: "",
@@ -174,38 +174,43 @@ async function createDriver() {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(currentDriver.value.password, salt);
 
-    const driverData = { ...currentDriver.value };
-    driverData.password = hashedPassword; // Save hashed password
+    const driverData = {
+        ...currentDriver.value,
+        password: hashedPassword,
+    };
     delete driverData.confirmPassword;
     delete driverData.originalEmail;
 
-    await addDoc(driversCollection, driverData);
+    const newDriverRef = doc(driversCollection);
+    driverData.driverId = newDriverRef.id;
+    await setDoc(newDriverRef, driverData);
 }
 async function updateDriver() {
     const driverDocRef = doc(driversCollection, currentDriver.value.id);
-    const driverData = { ...currentDriver.value };
 
-    // Update email if changed
+    const updates = {
+        name: currentDriver.value.name,
+        phone: currentDriver.value.phone,
+        licenseNumber: currentDriver.value.licenseNumber,
+        status: currentDriver.value.status
+    };
+
+    // Add email to updates if it changed
     if (currentDriver.value.email !== currentDriver.value.originalEmail) {
-        await updateDoc(doc(driversCollection, currentDriver.value.id), {
-            email: currentDriver.value.email
-        });
+        updates.email = currentDriver.value.email;
     }
-    delete driverData.password;
-    delete driverData.confirmPassword;
-    delete driverData.originalEmail;
-    await updateDoc(driverDocRef, driverData);
+    await updateDoc(driverDocRef, updates);
 }
 async function deleteDriver() {
     try {
-        const driverDoc = doc(driversCollection, driverToDelete.value);
-        const driverSnapshot = await getDoc(driverDoc);
+        const driverDocRef = doc(driversCollection, driverToDelete.value);
+        const driverSnapshot = await getDoc(driverDocRef);
         if (!driverSnapshot.exists()) {
             throw new Error('Driver not found');
         }
 
         // Delete from Firestore
-        await deleteDoc(driverDoc);
+        await deleteDoc(driverDocRef);
         showDeleteModal.value = false;
     } catch (error) {
         console.error("Error deleting driver: ", error);
@@ -338,7 +343,7 @@ const formatPhoneInput = (event) => {
                                 <button class="btn btn-link text-secondary mb-0 px-1" @click="editDriver(driver)">
                                     <i class="fas fa-pencil-alt text-xs" aria-hidden="true"></i>
                                 </button>
-                                <button class="btn btn-link text-danger mb-0 px-1" @click="confirmDelete(driver.id)">
+                                <button class="btn btn-link text-danger mb-0 px-1" @click="confirmDelete(driver.driverId)">
                                     <i class="fas fa-trash-alt text-xs" aria-hidden="true"></i>
                                 </button>
                             </td>
