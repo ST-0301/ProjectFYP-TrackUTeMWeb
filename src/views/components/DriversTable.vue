@@ -172,7 +172,12 @@ async function validateForm() {
 // CRUD operations
 async function createDriver() {
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(currentDriver.value.password, salt);
+    let hashedPassword = await bcrypt.hash(currentDriver.value.password, salt);
+
+    // Convert $2b to $2a
+    if (hashedPassword.startsWith('$2b$')) {
+        hashedPassword = '$2a' + hashedPassword.substring(3);
+    }
 
     const driverData = {
         ...currentDriver.value,
