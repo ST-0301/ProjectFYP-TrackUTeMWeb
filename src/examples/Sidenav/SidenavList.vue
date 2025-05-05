@@ -28,6 +28,13 @@ const getRoute = () => {
         </sidenav-item>
       </li>
 
+      <li class="nav-item">
+        <sidenav-item to="/bus-location" :class="getRoute() === 'bus-location' ? 'active' : ''" navText="Bus Location">
+          <template v-slot:icon>
+            <i class="fas fa-map-marker-alt text-info text-sm opacity-10"></i>
+          </template>
+        </sidenav-item>
+      </li>
 
       <li class="nav-item">
         <sidenav-item to="/drivers" :class="getRoute() === 'drivers' ? 'active' : ''" navText="Drivers">
@@ -37,6 +44,29 @@ const getRoute = () => {
         </sidenav-item>
       </li>
 
+      <li class="nav-item">
+        <sidenav-item to="/buses" :class="getRoute() === 'buses' ? 'active' : ''" navText="Buses">
+          <template v-slot:icon>
+            <i class="fas fa-bus text-info text-sm opacity-10"></i>
+          </template>
+        </sidenav-item>
+      </li>
+
+      <li class="nav-item">
+        <sidenav-item to="/stops" :class="getRoute() === 'stops' ? 'active' : ''" navText="Stops">
+          <template v-slot:icon>
+            <i class="fas fa-map-marker-alt text-success text-sm opacity-10"></i>
+          </template>
+        </sidenav-item>
+      </li>
+
+      <li class="nav-item">
+        <sidenav-item to="/routes" :class="getRoute() === 'routes' ? 'active' : ''" navText="Routes">
+          <template v-slot:icon>
+            <i class="fas fa-route text-danger text-sm opacity-10"></i>
+          </template>
+        </sidenav-item>
+      </li>
 
       <li class="mt-3 nav-item">
         <h6 class="text-xs ps-4 text-uppercase font-weight-bolder opacity-6">

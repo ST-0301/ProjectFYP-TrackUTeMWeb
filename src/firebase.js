@@ -2,6 +2,7 @@
 import { initializeApp } from "firebase/app";
 // import { getAnalytics } from "firebase/analytics";
 import { getFirestore, collection } from "firebase/firestore";
+import { getDatabase, ref } from "firebase/database";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 // TODO: Add SDKs for Firebase products that you want to use
@@ -23,10 +24,13 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 // const analytics = getAnalytics(app);
 const db = getFirestore(app);
+const database = getDatabase(app);
+
 const auth = getAuth(app);
 const storage = getStorage(app);
 
-// Create a reference to the drivers collection
-const driversCollection = collection(db, "drivers");
+// Create a reference to the driver collection
+const driverCollection = collection(db, "drivers");
+const busCollection = collection(db, "buses");
 
-export { db, auth, storage, driversCollection };
+export { db, driverCollection, busCollection, database, ref, auth, storage };

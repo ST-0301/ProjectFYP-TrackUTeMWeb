@@ -1,7 +1,12 @@
 import { createRouter, createWebHistory } from "vue-router";
 import Dashboard from "../views/Dashboard.vue";
 import Tables from "../views/Tables.vue";
+import BusLocation from '../views/BusLocation.vue';
 import Drivers from "../views/Drivers.vue";
+import Buses from "../views/Buses.vue";
+import Stops from "../views/Stops.vue";
+import Routes from "../views/Routes.vue";
+
 import Profile from "../views/Profile.vue";
 import Signup from "../views/Signup.vue";
 import Signin from "../views/Signin.vue";
@@ -22,10 +27,30 @@ const routes = [
     name: "Tables",
     component: Tables,
   },
+    {
+    path: '/bus-location',
+    name: 'bus-location',
+    component: BusLocation
+  },
   {
     path: "/drivers",
     name: "drivers",
     component: Drivers,
+  },
+  {
+    path: "/buses",
+    name: "buses",
+    component: Buses,
+  },
+  {
+    path: "/stops",
+    name: "stops",
+    component: Stops,
+  },
+    {
+    path: "/routes",
+    name: "routes",
+    component: Routes,
   },
   {
     path: "/profile",

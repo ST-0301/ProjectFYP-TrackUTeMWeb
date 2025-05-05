@@ -49,6 +49,30 @@
   }
 }
 
+.password-input-group {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+
+  .password-field {
+    width: 100%;
+  }
+
+  .password-toggle {
+    position: absolute;
+    padding: 8px 12px;
+    right: 0;
+    cursor: pointer;
+    color: $input-color;
+    transition: color 0.3s ease;
+    z-index: 2;
+
+    &:hover {
+      color: $primary;
+    }
+  }
+}
+
 .form-control {
   &.form-control-alternative {
     border: 0;
