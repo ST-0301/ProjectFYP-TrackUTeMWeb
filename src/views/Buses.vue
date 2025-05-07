@@ -35,7 +35,7 @@ onMounted(() => {
 // Helper functions
 function createDefaultBus() {
     return {
-        busId: 0,
+        busId: "",
         licensePlate: "",
         capacity: "",
         created: null,
@@ -183,6 +183,15 @@ const formatLicensePlateInput = (event) => {
         .slice(0, 8);
     validateLicensePlate();
 };
+const formatDateTime = (dateString) => {
+    const date = new Date(dateString);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+};
 </script>
 
 
@@ -214,6 +223,10 @@ const formatLicensePlateInput = (event) => {
                                         </th>
                                         <th
                                             class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
+                                            Created
+                                        </th>
+                                        <th
+                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
                                             Status
                                         </th>
                                         <th
@@ -235,6 +248,9 @@ const formatLicensePlateInput = (event) => {
                                         </td>
                                         <td>
                                             <p class="text-sm font-weight-bold mb-0">{{ bus.capacity }}</p>
+                                        </td>
+                                        <td>
+                                            <p class="text-sm font-weight-bold mb-0">{{ formatDateTime(bus.created) }}</p>
                                         </td>
                                         <td>
                                             <span class="badge badge-sm" :class="{
