@@ -1,71 +1,73 @@
 <script setup>
 import { ref } from 'vue';
 import { routeCollection } from '@/firebase';
-import { addDoc, serverTimestamp } from 'firebase/firestore';
+import { addDoc, serverTimestamp, getDocs, query, where } from 'firebase/firestore';
 import ArgonInput from "@/components/ArgonInput.vue";
 import ArgonButton from "@/components/ArgonButton.vue";
-// import ArgonCheckbox from "@/components/ArgonCheckbox.vue";
 
+
+// Reactive state
 const props = defineProps({ stops: Array });
 const emit = defineEmits(['update-route']);
-
 const routeName = ref('');
 const routeStatus = ref('active');
 const assignedBus = ref('');
 const assignedDriver = ref('');
-const schedule = ref({
-    monThu: { in: [], out: [] },
-    fri: { in: [], out: [] }
-});
-
-
-
-// Temporary time inputs
+const schedule = ref({ monThu: { in: [], out: [] }, fri: { in: [], out: [] } });
+const errors = ref({ name: '', stops: '' });
 const newInTime = ref('');
 const newOutTime = ref('');
-function addTime(dayType, timeType) {
-    const time = timeType === 'in' ? newInTime.value : newOutTime.value;
-    if (time) {
-        schedule.value[dayType][timeType].push(time);
-        if (timeType === 'in') newInTime.value = '';
-        else newOutTime.value = '';
-    }
-}
-
-// Form steps control
 const currentStep = ref(1);
-function nextStep() {
-    if (currentStep.value < 3) currentStep.value++;
-}
-function prevStep() {
-    if (currentStep.value > 1) currentStep.value--;
+
+
+// Validation function
+async function validateRouteName() {
+    errors.value.name = '';
+    if (!routeName.value.trim()) {
+        errors.value.name = 'Route name is required';
+        return false;
+    }
+    const q = query(routeCollection, where("name", "==", routeName.value.trim()));
+    const snapshot = await getDocs(q);
+    if (!snapshot.empty) {
+        errors.value.name = 'Route name already exists';
+        return false;
+    }
+    return true;
 }
 
+
+// CRUD operations
 async function emitUpdate() {
-    const scheduleData = {
-        monThu: {
-            in: [...schedule.value.monThu.in],
-            out: [...schedule.value.monThu.out]
-        },
-        fri: {
-            in: [...schedule.value.fri.in],
-            out: [...schedule.value.fri.out]
-        }
-    };
+    errors.value = { name: '', stops: '' };
+    const isValidName = await validateRouteName();
+    if (!isValidName) return;
+    if (props.stops.length < 2) {
+        errors.value.stops = 'At least 2 stops are required';
+        return;
+    }
 
     const routeData = {
         name: routeName.value,
         status: routeStatus.value,
         stops: props.stops.map(stop => stop.id),
-        schedule: scheduleData,
+        schedule: {
+            monThu: {
+                in: [...schedule.value.monThu.in],
+                out: [...schedule.value.monThu.out]
+            },
+            fri: {
+                in: [...schedule.value.fri.in],
+                out: [...schedule.value.fri.out]
+            }
+        },
         assignments: {
             bus: assignedBus.value,
             driver: assignedDriver.value
         },
         createdAt: serverTimestamp()
     };
-    console.log('Saving route data:', routeData);
-    
+
     try {
         await addDoc(routeCollection, routeData);
         alert('Route saved successfully!');
@@ -75,33 +77,43 @@ async function emitUpdate() {
         alert('Error saving route. Check console.');
     }
 }
+
+
+// UI handlers
+function addTime(dayType, timeType) {
+    const time = timeType === 'in' ? newInTime.value : newOutTime.value;
+    if (time) {
+        schedule.value[dayType][timeType].push(time);
+        if (timeType === 'in') newInTime.value = '';
+        else newOutTime.value = '';
+    }
+}
+async function nextStep() {
+    if (currentStep.value === 1) {
+        errors.value = { name: '', stops: '' };
+        if (!routeName.value.trim()) {
+            errors.value.name = 'Route name is required';
+            return;
+        }
+        const q = query(routeCollection, where("name", "==", routeName.value.trim()));
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+            errors.value.name = 'Route name already exists';
+            return;
+        }
+        if (props.stops.length < 2) {
+            errors.value.stops = 'At least 2 stops are required';
+            return;
+        }
+    }
+    if (currentStep.value < 3) currentStep.value++;
+}
+function prevStep() {
+    if (currentStep.value > 1) currentStep.value--;
+}
 </script>
 
-<style scoped>
-.badge {
-    font-size: 0.75rem;
-    padding: 0.5em 0.75em;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-.btn-rotate {
-    transform: rotate(45deg);
-    padding: 0;
-    line-height: 1;
-}
-.step-indicator {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    font-size: 0.9rem;
-    color: #666;
-}
-.bg-white {
-    background: white;
-    z-index: 1;
-}
-</style>
+
 
 <template>
     <div class="card d-flex flex-column">
@@ -116,6 +128,7 @@ async function emitUpdate() {
                     <div class="mb-3">
                         <label class="form-label">Route Name</label>
                         <ArgonInput v-model="routeName" type="text" placeholder="Route Name" required />
+                        <div v-if="errors.name" class="text-danger text-sm mt-1">{{ errors.name }}</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Status</label>
@@ -126,13 +139,15 @@ async function emitUpdate() {
                     </div>
                     <div>
                         <h3 class="text-sm font-weight-bold">Bus Stops</h3>
+                        <div v-if="errors.stops" class="text-danger text-sm mb-2">{{ errors.stops }}</div>
                         <ul class="list-group">
                             <li v-for="(stop, index) in stops" :key="stop.id"
                                 class="list-group-item d-flex align-items-center">
                                 <span class="badge bg-gradient-success me-2">{{ index + 1 }}</span>
-                                {{ stop.title }} ({{ stop.id }})
+                                {{ stop.title }}
                             </li>
                         </ul>
+
                     </div>
 
                     <!-- <div class="d-flex justify-content-between">
@@ -147,7 +162,7 @@ async function emitUpdate() {
 
                 <!-- Step 2: Schedule -->
                 <div v-show="currentStep === 2" class="space-y-4">
-                    <h3 class="text-sm font-weight-bold">Schedule Setup</h3>
+                    <h3 class="text-sm font-weight-bold">Schedule Setup (Optional)</h3>
                     <div v-for="(dayGroup, dayKey) in schedule" :key="dayKey" class="mb-4">
                         <h5 class="text-capitalize">{{ dayKey }}</h5>
                         <div class="row">
@@ -239,7 +254,8 @@ async function emitUpdate() {
             </div>
             <div class="border-top pt-3 mt-auto bg-white" style="position: sticky; bottom: 0;">
                 <div class="d-flex justify-content-between">
-                    <ArgonButton v-if="currentStep > 1" color="secondary" @click="prevStep" class="me-2">
+                    <ArgonButton v-if="currentStep > 1" color="secondary" @click="prevStep"
+                        :disabled="currentStep === 1" class="me-2">
                         <i class="ni ni-bold-left me-1"></i> Previous
                     </ArgonButton>
 
@@ -248,12 +264,41 @@ async function emitUpdate() {
                             Next <i class="ni ni-bold-right ms-1"></i>
                         </ArgonButton>
 
-                        <ArgonButton v-if="currentStep === 3" color="success" variant="gradient" @click="emitUpdate">
+                        <ArgonButton v-if="currentStep === 3" color="success" variant="gradient" @click="emitUpdate"
+                            :disabled="!routeName || stops.length < 2">
                             <i class="ni ni-check-bold me-1"></i> Save Route
                         </ArgonButton>
                     </div>
                 </div>
             </div>
-    </div>
+        </div>
     </div>
 </template>
+
+
+
+<style scoped>
+.badge {
+    font-size: 0.75rem;
+    padding: 0.5em 0.75em;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.btn-rotate {
+    transform: rotate(45deg);
+    padding: 0;
+    line-height: 1;
+}
+.step-indicator {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    font-size: 0.9rem;
+    color: #666;
+}
+.bg-white {
+    background: white;
+    z-index: 1;
+}
+</style>

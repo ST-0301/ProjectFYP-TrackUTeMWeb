@@ -8,6 +8,10 @@ const props = defineProps({
     location: {
         type: Object,
         default: () => ({ lat: null, lng: null })
+    },
+    existingStops: {
+        type: Array,
+        default: () => []
     }
 });
 const emit = defineEmits(['update:location']);
@@ -71,7 +75,7 @@ watch(() => props.location, (newVal) => {
 
 
 <template>
-    <GoogleMap :center="currentLocation.lat ? currentLocation : defaultCenter" :zoom="15" :markers="markers"
+    <GoogleMap :center="currentLocation.lat ? currentLocation : defaultCenter" :zoom="15" :markers="markers" :existing-stops="existingStops"
         :enable-click-to-add="true" :enable-draggable-markers="true" class="map-picker" @marker-added="handleMapClick"
         @marker-dragged="handleMarkerDrag" />
 </template>

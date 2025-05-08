@@ -6,7 +6,7 @@ import ArgonAlert from "@/components/ArgonAlert.vue";
 
 const props = defineProps({
     center: { type: Object, required: true },
-    zoom: { type: Number, default: 8 },
+    zoom: { type: Number, default: 15 },
     markers: { type: Array, default: () => [] },
     // routes: { type: Array, default: () => [] },
     mapOptions: {
@@ -16,7 +16,9 @@ const props = defineProps({
             mapTypeControl: false,
             streetViewControl: false,
             gestureHandling: 'greedy'
-    }) },
+        })
+    },
+    existingStops: { type: Array, default: () => [] },
     enableClickToAdd: { type: Boolean, default: false },
     enableDraggableMarkers: { type: Boolean, default: false }
 });
@@ -58,13 +60,32 @@ const initializeMap = async () => {
 // Markers management
 const updateMarkers = () => {
     clearMarkers();
+    props.existingStops.forEach(stop => {
+        const blueMarker = new AdvancedMarkerElement.value({
+            position: stop.location,
+            map: mapInstance.value,
+            title: stop.name,
+            content: createMarkerElement({ color: '#4285F4' }),
+            gmpClickable: true
+        });
+        blueMarker.addEventListener('gmp-click', () => {
+            emit('marker-clicked', {
+                id: stop.id,
+                position: stop.location,
+                title: stop.name
+            });
+        });
+        
+        currentMarkers.value.push(blueMarker);
+    });
+
     props.markers.forEach(markerConfig => {
         const marker = new AdvancedMarkerElement.value({
             position: markerConfig.position,
             map: mapInstance.value,
             title: markerConfig.title,
             gmpDraggable: props.enableDraggableMarkers,
-            content: createMarkerElement(markerConfig)
+            content: createMarkerElement({ color: '#EA4335' })
         });
 
         if (markerConfig.clickable) {
@@ -105,13 +126,15 @@ const setupClickListener = () => {
 const createMarkerElement = (config) => {
     const element = document.createElement('div');
     element.className = 'advanced-marker';
-    if (config.icon) {
-        element.textContent = config.icon;
-        element.style.fontSize = '24px';
-        element.style.color = config.color || '#FF0000';
-    } else {
-        element.textContent = config.title || '📍';
-    }
+    // element.textContent = config.icon;
+    // element.style.fontSize = '24px';
+    // element.style.color = config.color || '#EA4335';
+    element.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path fill="${config.color || '#EA4335'}" 
+                  d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z"/>
+        </svg>
+    `;
     return element;
 };
 
@@ -123,11 +146,14 @@ onUnmounted(() => {
     clearMarkers();
     mapInstance.value = null;
 });
-watch(() => props.markers, updateMarkers, { deep: true });
+watch(
+    () => [props.markers, props.existingStops],
+    () => updateMarkers(),
+    { deep: true }
+);
 watchEffect(() => {
     if (mapInstance.value) {
         mapInstance.value.setCenter(props.center);
-        mapInstance.value.setZoom(props.zoom);
     }
 });
 </script>
@@ -152,19 +178,18 @@ watchEffect(() => {
     z-index: 1000;
 }
 .advanced-marker {
-    font-size: 24px;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-    position: relative;
-    top: 0;
-    left: 0;
+    width: 32px;
+    height: 32px;
     cursor: grab;
-    touch-action: none;
-    user-select: none;
-    -webkit-user-drag: none;
-    pointer-events: auto !important;
 }
 .advanced-marker:active {
     cursor: grabbing;
+}
+.advanced-marker svg {
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+    transition: transform 0.2s ease;
+}.advanced-marker:hover svg {
+    transform: scale(1.1);
 }
 </style>
 

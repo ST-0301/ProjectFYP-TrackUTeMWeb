@@ -16,10 +16,7 @@ const showDeleteModal = ref(false);
 const editingStop = ref(false);
 const currentStop = reactive(createDefaultStop());
 const stopToDelete = ref(null);
-const errors = ref({
-    name: '',
-    location: ''
-});
+const errors = ref({ name: '', location: '' });
 const mapLoaded = ref(false);
 
 
@@ -61,8 +58,7 @@ async function checkExistingStop() {
         getDocs(nameQuery),
         getDocs(locationQuery)
     ]);
-    if (editingStop .value) {
-        // Check if any document is not the same as current stop's ID
+    if (editingStop.value) {
         return {
             nameExists: nameSnapshot.docs.some(doc => doc.id !== currentStop.id),
             locationExists: locationSnapshot.docs.some(doc => doc.id !== currentStop.id)
@@ -72,6 +68,12 @@ async function checkExistingStop() {
         nameExists: !nameSnapshot.empty,
         locationExists: !locationSnapshot.empty
     };
+};
+const getRouteNamesForStop = (stopId) => {
+    const matchingRoutes = routes.value.filter(route =>
+        route.stops && route.stops.includes(stopId)
+    );
+    return matchingRoutes.map(route => route.name).join(', ') || '-';
 };
 
 
@@ -84,19 +86,14 @@ const validateForm = async () => {
         isValid = false;
     }
 
-    // Convert strings to numbers
     const lat = Number(currentStop.location.lat);
     const lng = Number(currentStop.location.lng);
-    if (!lat || !lng) {
-        errors.value.location = 'Valid location is required';
-        isValid = false;
-    }
-    if (isNaN(lat) || isNaN(lng)) {
+    currentStop.location.lat = lat;
+    currentStop.location.lng = lng;
+    if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
         errors.value.location = 'Valid numeric coordinates required';
         isValid = false;
     }
-    currentStop.location.lat = lat;
-    currentStop.location.lng = lng;
 
     const { nameExists, locationExists } = await checkExistingStop();
     if (nameExists) {
@@ -116,8 +113,12 @@ async function createStop() {
     try {
         const newStopRef = doc(stopCollection);
         const stopData = {
-            ...currentStop,
             stopId: newStopRef.id,
+            name: currentStop.name,
+            location: {
+                lat: currentStop.location.lat,
+                lng: currentStop.location.lng
+            },
             created: new Date().toISOString()
         };
         await setDoc(newStopRef, stopData);
@@ -148,7 +149,7 @@ async function deleteStop() {
 
 // UI handlers
 const addStop = () => {
-    currentStop.value = createDefaultStop();
+    Object.assign(currentStop, createDefaultStop());
     editingStop.value = false;
     showAddStopModal.value = true;
 };
@@ -180,20 +181,11 @@ const confirmDelete = (id) => {
 const closeModal = () => {
     showAddStopModal.value = false;
     editingStop.value = false;
-    currentStop.value = createDefaultStop();
+    Object.assign(currentStop, createDefaultStop());
     errors.value = {
         name: '',
         location: ''
     };
-};
-
-
-// Get route names for a stop
-const getRouteNamesForStop = (stopId) => {
-    const matchingRoutes = routes.value.filter(route =>
-        route.stops && route.stops.includes(stopId)
-    );
-    return matchingRoutes.map(route => route.name).join(', ') || '-';
 };
 
 
@@ -209,28 +201,12 @@ const formatDateTime = (dateString) => {
 };
 
 
-// Add location watcher
+// Watchers
 watch(() => currentStop.location, (newVal) => {
     currentStop.location.lat = Number(newVal.lat);
     currentStop.location.lng = Number(newVal.lng);
 }, { deep: true, immediate: true });
 </script>
-
-
-
-<style scoped>
-/* Add this at the end of your component */
-.stop-page-map :deep(.map-container) {
-    height: 300px !important;
-}
-.stop-page-map :deep(.card) {
-    height: 100%;
-    margin-bottom: 0;
-}
-.stop-page-map :deep(.card-body) {
-    height: calc(100% - 20px);
-}
-</style>
 
 
 
@@ -319,7 +295,7 @@ watch(() => currentStop.location, (newVal) => {
                     <!-- Add/Edit Bus Stop Modal -->
                     <div class="modal fade" :class="{ 'show d-block': showAddStopModal }" tabindex="-1" role="dialog"
                         v-if="showAddStopModal">
-                        <div class="modal-dialog modal-dialog-centered" role="document">
+                        <div class="modal-dialog modal-dialog-centered modal-xl" role="document">
                             <div class="modal-content">
                                 <div class="modal-header">
                                     <h5 class="modal-title">{{ editingStop ? 'Edit Bus Stop' : 'Add New Bus Stop' }}
@@ -327,50 +303,83 @@ watch(() => currentStop.location, (newVal) => {
                                     <button type="button" class="btn-close" @click="closeModal"></button>
                                 </div>
                                 <div class="modal-body">
-                                    <form @submit.prevent="saveStop">
-
-                                        <div class="mb-3">
-                                            <label class="form-label">Bus Stop Name</label>
-                                            <argon-input v-model="currentStop.name" type="text"
-                                                placeholder="Bus stop name" required />
-                                            <div v-if="errors.name" class="text-danger text-sm mt-1">{{ errors.name }}
-                                            </div>
-                                        </div>
-
-                                        <div class="mb-3">
-                                            <label class="form-label">Location</label>
-                                            <div class="row g-2">
-                                                <div class="col">
-                                                    <argon-input v-model.number="currentStop.location.lat" type="number"
-                                                        step="any" placeholder="Latitude" required />
-                                                </div>
-
-                                                <div class="col">
-                                                    <argon-input v-model.number="currentStop.location.lng" type="number"
-                                                        step="any" placeholder="Longitude" required />
+                                    <form @submit.prevent="saveStop" class="row g-4">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">Bus Stop Name</label>
+                                                <argon-input v-model="currentStop.name" type="text"
+                                                    placeholder="Bus stop name" required />
+                                                <div v-if="errors.name" class="text-danger text-sm mt-1">{{ errors.name
+                                                    }}
                                                 </div>
                                             </div>
-                                            <div class="text-muted text-xs">
-                                                Click on the map below to select location
-                                            </div>
-                                            <div v-if="errors.location" class="text-danger text-sm mt-1">{{
-                                                errors.location }}
-                                            </div>
 
-                                            <GoogleMapPicker v-if="showAddStopModal"
-                                                v-model:location="currentStop.location" class="mt-3 stop-page-map" />
+                                            <div class="mb-3">
+                                                <h3 class="text-sm font-weight-bold mt-4">Coordinates</h3>
+
+                                                <!-- <label class="form-label">Coordinates</label> -->
+                                                <div class="row g-2">
+                                                    <!-- Latitude Row -->
+                                                    <div class="col-12">
+                                                        <div class="row g-2 align-items-center">
+                                                            <div class="col-3">
+                                                                <label
+                                                                    class="form-label text-muted pt-2 pb-3">Latitude:</label>
+                                                            </div>
+                                                            <div class="col-9">
+                                                                <argon-input v-model.number="currentStop.location.lat"
+                                                                    type="number" step="any" placeholder="Latitude"
+                                                                    required />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Longitude Row -->
+                                                    <div class="col-12">
+                                                        <div class="row g-2 align-items-center">
+                                                            <div class="col-3">
+                                                                <label
+                                                                    class="form-label text-muted pt-2 pb-3">Longitude:</label>
+                                                            </div>
+                                                            <div class="col-9">
+                                                                <argon-input v-model.number="currentStop.location.lng"
+                                                                    type="number" step="any" placeholder="Longitude"
+                                                                    required />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div v-if="errors.location" class="text-danger text-sm mt-1">
+                                                    {{ errors.location }}
+                                                </div>
+                                            </div>
                                         </div>
 
-                                        <div v-if="errors.general" class="alert alert-danger text-sm mt-2">
-                                            {{ errors.general }}
+
+                                        <div class="col-md-6">
+                                            <div class="h-100 d-flex flex-column">
+                                                <label class="form-label">Select Location</label>
+                                                <div class="text-muted text-xs">
+                                                    Click on the map below to select location
+                                                </div>
+                                                <GoogleMapPicker v-if="showAddStopModal"
+                                                    v-model:location="currentStop.location" :existing-stops="stops"
+                                                    class="mt-3 stop-page-map flex-grow-1" />
+                                            </div>
                                         </div>
-                                        <div class="d-flex justify-content-end gap-3 mt-4">
-                                            <argon-button type="button" color="secondary" @click="closeModal">
-                                                Cancel
-                                            </argon-button>
-                                            <argon-button type="submit" color="success" variant="gradient">
-                                                {{ editingStop ? 'Update Bus Stop' : 'Add Bus Stop' }}
-                                            </argon-button>
+
+                                        <div class="col-12 mt-2">
+                                            <div v-if="errors.general" class="alert alert-danger text-sm mt-2">
+                                                {{ errors.general }}
+                                            </div>
+                                            <div class="d-flex justify-content-end gap-3 mt-2">
+                                                <argon-button type="button" color="secondary" @click="closeModal">
+                                                    Cancel
+                                                </argon-button>
+                                                <argon-button type="submit" color="success" variant="gradient">
+                                                    {{ editingStop ? 'Update Bus Stop' : 'Add Bus Stop' }}
+                                                </argon-button>
+                                            </div>
                                         </div>
                                     </form>
                                 </div>
@@ -378,6 +387,9 @@ watch(() => currentStop.location, (newVal) => {
                         </div>
                     </div>
                     <div class="modal-backdrop fade show" v-if="showAddStopModal"></div>
+
+
+
 
                     <!-- Delete Confirmation Modal -->
                     <div class="modal fade" :class="{ 'show d-block': showDeleteModal }" tabindex="-1" role="dialog"
@@ -405,3 +417,23 @@ watch(() => currentStop.location, (newVal) => {
         </div>
     </div>
 </template>
+
+
+
+<style scoped>
+.modal-xl {
+    max-width: 800px;
+}
+.stop-page-map :deep(.map-container) {
+    height: 400px !important;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+}
+.stop-page-map :deep(.card) {
+    height: 100%;
+    margin-bottom: 0;
+}
+.stop-page-map :deep(.card-body) {
+    height: calc(100% - 20px);
+}
+</style>
