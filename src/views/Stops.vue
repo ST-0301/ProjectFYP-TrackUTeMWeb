@@ -28,7 +28,6 @@ onMounted(() => {
             ...doc.data()
         }));
     });
-
     const routesUnsub = onSnapshot(routeCollection, (snapshot) => {
         routes.value = snapshot.docs.map(doc => ({
             id: doc.id,
@@ -190,14 +189,26 @@ const closeModal = () => {
 
 
 // Formatters
-const formatDateTime = (dateString) => {
-    const date = new Date(dateString);
+const formatDateTime = (dateInput) => {
+    let date;
+    if (dateInput && typeof dateInput.toDate === 'function') {
+        date = dateInput.toDate();
+    } else {
+        date = new Date(dateInput);
+    }
+    if (isNaN(date.getTime())) {
+        return '-';
+    }
+
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
+    let hours = date.getHours();
     const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+
+    return `${year}-${month}-${day}, ${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
 };
 
 
@@ -295,7 +306,7 @@ watch(() => currentStop.location, (newVal) => {
                     <!-- Add/Edit Bus Stop Modal -->
                     <div class="modal fade" :class="{ 'show d-block': showAddStopModal }" tabindex="-1" role="dialog"
                         v-if="showAddStopModal">
-                        <div class="modal-dialog modal-dialog-centered modal-xl" role="document">
+                        <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
                             <div class="modal-content">
                                 <div class="modal-header">
                                     <h5 class="modal-title">{{ editingStop ? 'Edit Bus Stop' : 'Add New Bus Stop' }}
@@ -316,8 +327,6 @@ watch(() => currentStop.location, (newVal) => {
 
                                             <div class="mb-3">
                                                 <h3 class="text-sm font-weight-bold mt-4">Coordinates</h3>
-
-                                                <!-- <label class="form-label">Coordinates</label> -->
                                                 <div class="row g-2">
                                                     <!-- Latitude Row -->
                                                     <div class="col-12">
@@ -421,9 +430,6 @@ watch(() => currentStop.location, (newVal) => {
 
 
 <style scoped>
-.modal-xl {
-    max-width: 800px;
-}
 .stop-page-map :deep(.map-container) {
     height: 400px !important;
     border-radius: 8px;

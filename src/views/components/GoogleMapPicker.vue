@@ -1,65 +1,89 @@
-<!-- src/views/components/GoogleMapPicker.vue -->
 <script setup>
-import { ref, watch } from 'vue';
-import GoogleMap from '@/views/components/GoogleMap.vue';
+import { ref, watch, reactive } from 'vue';
+import GoogleMap from './GoogleMap.vue';
 
 
 const props = defineProps({
-    location: {
-        type: Object,
-        default: () => ({ lat: null, lng: null })
-    },
-    existingStops: {
-        type: Array,
-        default: () => []
-    }
+    location: { type: Object, default: () => ({ lat: null, lng: null }) },
+    existingStops: { type: Array, default: () => [] },
+    enableClickToAdd: { type: Boolean, default: true },
+    enableDraggableMarkers: { type: Boolean, default: true },
 });
-const emit = defineEmits(['update:location']);
-const defaultCenter = { lat: 2.3114, lng: 102.3203 };
-const currentLocation = ref(JSON.parse(JSON.stringify(props.location)));
+const emit = defineEmits(['update:location', 'marker-clicked']);
+const internalLocation = reactive({
+    lat: props.location.lat,
+    lng: props.location.lng
+});
 const markers = ref([]);
 
 
-// Create a marker object
-const createMarker = (position) => ({
-    position,
-    title: 'Selected Location',
-    clickable: false,
-    color: '#FF0000',
-    icon: '📍',
-    zIndex: 9999
-});
+// Watch
+watch(
+    () => props.location,
+    (newLocation) => {
+        internalLocation.lat = newLocation.lat;
+        internalLocation.lng = newLocation.lng;
+    }, { immediate: true, deep: true }
+);
+watch(
+    [() => props.existingStops, () => internalLocation.lat, () => internalLocation.lng],
+    ([newStops, lat, lng]) => {
+        // always start with blue markers for existing stops
+        const base = newStops.map(stop => ({
+            id: stop.id,
+            position: stop.location,
+            title: stop.name,
+            clickable: true,
+            draggable: false,
+            color: '#4285F4'
+        }));
+
+        // if picked a location, append the red draggable one
+        if (lat != null && lng != null) {
+            base.push({
+                position: { lat, lng },
+                title: 'Selected Location',
+                clickable: false,
+                draggable: true,
+                color: '#EA4335'
+            });
+        }
+        markers.value = base;
+    }, { immediate: true, deep: true }
+);
 
 
-// Handle map click & drag
+// Handlers
 const handleMapClick = (e) => {
     const newLocation = {
-        lat: Number(e.position.lat.toFixed(6)),
-        lng: Number(e.position.lng.toFixed(6))
-    }
-    currentLocation.value = newLocation;
+        lat: e.position.lat,
+        lng: e.position.lng
+    };
+    internalLocation.lat = newLocation.lat;
+    internalLocation.lng = newLocation.lng;
     emit('update:location', newLocation);
-    markers.value = [createMarker(newLocation)];
 };
 const handleMarkerDrag = (e) => {
     const newLocation = {
-        lat: Number(e.position.lat.toFixed(6)),
-        lng: Number(e.position.lng.toFixed(6))
+        lat: e.position.lat,
+        lng: e.position.lng
     };
-    currentLocation.value = newLocation;
+    internalLocation.lat = newLocation.lat;
+    internalLocation.lng = newLocation.lng;
     emit('update:location', newLocation);
-    markers.value = [createMarker(newLocation)];
 };
-
-
-// Update markers when location changes
-watch(() => props.location, (newVal) => {
-    if (newVal.lat && newVal.lng) {
-        currentLocation.value = JSON.parse(JSON.stringify(newVal));
-        markers.value = [createMarker(newVal)];
-    }
-}, { immediate: true, deep: true });
 </script>
+
+
+
+<template>
+    <GoogleMap
+        :center="{ lat: 2.3114, lng: 102.3203 }"
+        :zoom="15" :markers="markers" :existing-stops="props.existingStops"
+        :enable-click-to-add="props.enableClickToAdd" :enable-draggable-markers="props.enableDraggableMarkers"
+        class="map-picker" @marker-added="handleMapClick" @marker-dragged="handleMarkerDrag"
+        @marker-clicked="$emit('marker-clicked', $event)" />
+</template>
 
 
 
@@ -71,11 +95,3 @@ watch(() => props.location, (newVal) => {
     margin-top: 1rem;
 }
 </style>
-
-
-
-<template>
-    <GoogleMap :center="currentLocation.lat ? currentLocation : defaultCenter" :zoom="15" :markers="markers" :existing-stops="existingStops"
-        :enable-click-to-add="true" :enable-draggable-markers="true" class="map-picker" @marker-added="handleMapClick"
-        @marker-dragged="handleMarkerDrag" />
-</template>
