@@ -6,6 +6,7 @@ import Drivers from "../views/Drivers.vue";
 import Buses from "../views/Buses.vue";
 import Stops from "../views/Stops.vue";
 import Routes from "../views/Routes.vue";
+import Schedule from "../views/components/Schedule.vue";
 
 import Profile from "../views/Profile.vue";
 import Signup from "../views/Signup.vue";
@@ -51,6 +52,11 @@ const routes = [
     path: "/routes",
     name: "routes",
     component: Routes,
+  },
+  {
+    path: "/routes/:id/schedule",
+    name: "RouteSchedule",
+    component: Schedule,
   },
   {
     path: "/profile",

@@ -221,12 +221,13 @@ const formatDateTime = (dateInput) => {
                             </argon-button>
                         </div>
                     </div>
-                    <div class="card-body px-0 pt-0 pb-2">
+                    <div class="card-body pt-0 pb-2">
                         <div class="table-responsive p-0">
                             <table class="table align-items-center justify-content-center mb-0">
                                 <thead>
                                     <tr>
-                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7">
+                                        <th
+                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
                                             License
                                             Plate</th>
                                         <th
@@ -256,13 +257,14 @@ const formatDateTime = (dateInput) => {
 
                                     <tr v-for="bus in buses" :key="bus.busId">
                                         <td>
-                                            <p class="text-sm font-weight-bold mb-0 px-2">{{ bus.licensePlate }}</p>
+                                            <p class="text-sm font-weight-bold mb-0">{{ bus.licensePlate }}</p>
                                         </td>
                                         <td>
                                             <p class="text-sm font-weight-bold mb-0">{{ bus.capacity }}</p>
                                         </td>
                                         <td>
-                                            <p class="text-sm font-weight-bold mb-0">{{ formatDateTime(bus.created) }}</p>
+                                            <p class="text-sm font-weight-bold mb-0">{{ formatDateTime(bus.created) }}
+                                            </p>
                                         </td>
                                         <td>
                                             <span class="badge badge-sm" :class="{

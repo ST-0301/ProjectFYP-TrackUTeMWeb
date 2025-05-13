@@ -186,6 +186,8 @@ watch(() => currentRoute.stops, () => {
 });
 </script>
 
+
+
 <template>
     <div class="py-4 container-fluid">
         <div class="row">
@@ -199,12 +201,13 @@ watch(() => currentRoute.stops, () => {
                             </argon-button>
                         </div>
                     </div>
-                    <div class="card-body px-0 pt-0 pb-2">
+                    <div class="card-body pt-0 pb-2">
                         <div class="table-responsive p-0">
                             <table class="table align-items-center justify-content-center mb-0">
                                 <thead>
                                     <tr>
-                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7">
+                                        <th
+                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
                                             Route Name</th>
                                         <th
                                             class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
@@ -245,6 +248,12 @@ watch(() => currentRoute.stops, () => {
                                                 @click="confirmDelete(route.id)">
                                                 <i class="fas fa-trash-alt text-xs" aria-hidden="true"></i>
                                             </button>
+                                            <router-link :to="{
+                                                path: `/routes/${route.id}/schedule`,
+                                                query: { name: route.name }
+                                            }" class="btn btn-link text-info mb-0 px-1">
+                                                <i class="fas fa-calendar-alt text-xs" aria-hidden="true"></i>
+                                            </router-link>
                                         </td>
                                     </tr>
                                 </tbody>
@@ -315,6 +324,14 @@ watch(() => currentRoute.stops, () => {
                                                 <argon-button type="button" color="secondary" @click="closeModal">
                                                     Cancel
                                                 </argon-button>
+                                                <router-link :to="{
+                                                    path: `/routes/${currentRoute.id}/schedule`,
+                                                    query: { name: currentRoute.name }
+                                                }" v-if="editingRoute">
+                                                    <argon-button type="button" color="info" class="me-2">
+                                                        Manage Schedule
+                                                    </argon-button>
+                                                </router-link>
                                                 <argon-button type="submit" color="success" variant="gradient">
                                                     {{ editingRoute ? 'Update Route' : 'Add Route' }}
                                                 </argon-button>
@@ -354,6 +371,8 @@ watch(() => currentRoute.stops, () => {
         </div>
     </div>
 </template>
+
+
 
 <style scoped>
 .stop-page-map :deep(.map-container) {

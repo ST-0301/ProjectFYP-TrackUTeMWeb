@@ -234,12 +234,13 @@ watch(() => currentStop.location, (newVal) => {
                             </argon-button>
                         </div>
                     </div>
-                    <div class="card-body px-0 pt-0 pb-2">
+                    <div class="card-body pt-0 pb-2">
                         <div class="table-responsive p-0">
                             <table class="table align-items-center justify-content-center mb-0">
                                 <thead>
                                     <tr>
-                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7">
+                                        <th
+                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
                                             Stop
                                             Name</th>
                                         <th
@@ -269,7 +270,7 @@ watch(() => currentStop.location, (newVal) => {
 
                                     <tr v-for="stop in stops" :key="stop.stopId">
                                         <td>
-                                            <p class="text-sm font-weight-bold mb-0 px-2">{{ stop.name }}</p>
+                                            <p class="text-sm font-weight-bold mb-0">{{ stop.name }}</p>
                                         </td>
                                         <td>
                                             <p class="text-sm font-weight-bold mb-0">
