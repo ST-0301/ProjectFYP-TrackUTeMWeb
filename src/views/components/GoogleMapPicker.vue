@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, reactive, computed } from 'vue';
+import { ref, watch, reactive } from 'vue';
 import GoogleMap from './GoogleMap.vue';
 
 
@@ -8,6 +8,7 @@ const props = defineProps({
     existingStops: { type: Array, default: () => [] },
     isEditing: { type: Boolean, default: false },
     editingStopId: { type: String, default: null },
+    center: { type: Object, required: true },
     enableClickToAdd: { type: Boolean, default: true },
     enableDraggableMarkers: { type: Boolean, default: true },
 });
@@ -17,11 +18,10 @@ const internalLocation = reactive({
     lng: props.location.lng
 });
 const markers = ref([]);
-const mapCenter = computed(() => ({
-    // whenever internalLocation changes (drag or click), this updates
-    lat: internalLocation.lat ?? 2.3114,
-    lng: internalLocation.lng ?? 102.3203
-}));
+// const mapCenter = computed(() => ({
+//     lat: internalLocation.lat ?? 2.3114,
+//     lng: internalLocation.lng ?? 102.3203
+// }));
 
 
 // Watch
@@ -35,7 +35,6 @@ watch(
 watch(
     [() => props.existingStops, () => internalLocation.lat, () => internalLocation.lng, () => props.editingStopId],
     ([newStops, lat, lng, editingStopId]) => {
-        // Correctly filter out the editing stop before mapping
         const base = newStops
             .filter(stop => !(props.isEditing && stop.id === props.editingStopId))
             .map(stop => ({
@@ -47,12 +46,11 @@ watch(
                 color: '#4285F4'
             }));
 
-        // Add editing stop as red marker if exists
         if (props.isEditing && props.editingStopId) {
             const editingStopData = newStops.find(s => s.id === props.editingStopId) || {};
             base.push({
                 id: props.editingStopId,
-                position: {                      // ← use internalLocation so drag sticks
+                position: {
                     lat: internalLocation.lat,
                     lng: internalLocation.lng
                 },
@@ -63,7 +61,6 @@ watch(
             });
         }
 
-        // Add new location marker only when not editing
         if (lat != null && lng != null && !editingStopId) {
             base.push({
                 position: { lat, lng },
@@ -104,7 +101,7 @@ const handleMarkerDrag = (e) => {
 
 
 <template>
-    <GoogleMap :center="mapCenter" :zoom="15" :markers="markers" :existing-stops="props.existingStops"
+    <GoogleMap :center="props.center" :zoom="15" :markers="markers" :existing-stops="props.existingStops"
         :enable-click-to-add="props.enableClickToAdd" :enable-draggable-markers="props.enableDraggableMarkers"
         class="map-picker" @marker-added="handleMapClick" @marker-dragged="handleMarkerDrag"
         @marker-clicked="$emit('marker-clicked', $event)" />

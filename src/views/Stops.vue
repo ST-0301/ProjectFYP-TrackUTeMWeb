@@ -19,6 +19,8 @@ const stopToDelete = ref(null);
 const errors = ref({ name: '', location: '' });
 const mapLoaded = ref(false);
 const routesUsingStop = ref([]);
+const DEFAULT_CENTER = { lat: 2.3114, lng: 102.3203 };
+const mapCenter = ref({ ...DEFAULT_CENTER });
 
 
 // Lifecycle hooks
@@ -159,11 +161,13 @@ async function deleteStop() {
 const addStop = () => {
     Object.assign(currentStop, createDefaultStop());
     editingStop.value = false;
+    mapCenter.value = { ...DEFAULT_CENTER };
     showAddStopModal.value = true;
 };
 const editStop = async (stop) => {
     Object.assign(currentStop, stop);
     editingStop.value = true;
+    mapCenter.value = { lat: stop.location.lat, lng: stop.location.lng };
     showAddStopModal.value = true;
     await nextTick();
     mapLoaded.value = true;
@@ -388,7 +392,7 @@ watch(() => currentStop.location, (newVal) => {
                                                     v-model:location="currentStop.location" :existing-stops="stops"
                                                     :is-editing="editingStop"
                                                     :editing-stop-id="editingStop ? currentStop.id : null"
-                                                    class="mt-3 stop-page-map flex-grow-1" />
+                                                    :center="mapCenter" class="mt-3 stop-page-map flex-grow-1" />
                                             </div>
                                         </div>
 
