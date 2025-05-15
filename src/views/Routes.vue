@@ -46,19 +46,18 @@ function createDefaultRoute() {
         created: null
     };
 }
-const getAllStopNames = (stopIds) => {
-    if (!Array.isArray(stopIds) || stops.value.length === 0) {
-        return '-';
-    }
-    const stopNameMap = stops.value.reduce((acc, stop) => {
-        acc[stop.id] = stop.name;
-        return acc;
-    }, {});
-    return stopIds.map(stopId => stopNameMap[stopId] || 'Unknown Stop').join(', ') || '-';
-};
 const getStopName = (stopId) => {
     const stop = stops.value.find(s => s.id === stopId);
     return stop ? stop.name : 'Unknown Stop';
+};
+const getPreviewStopNames = stopIds => {
+    if (!Array.isArray(stopIds) || stopIds.length === 0) return '-';
+    const map = stops.value.reduce((a, s) => { a[s.id] = s.name; return a; }, {});
+    const names = stopIds.map(id => map[id] || 'Unknown Stop');
+    if (names.length <= 4) return names.join(', ');
+    const firstThree = names.slice(0, 3);
+    const last = names[names.length - 1];
+    return [...firstThree, '...', last].join(', ');
 };
 
 
@@ -232,7 +231,7 @@ watch(() => currentRoute.stops, () => {
                                         </td>
                                         <td>
                                             <p class="text-sm font-weight-bold mb-0">
-                                                {{ getAllStopNames(route.stops) }}
+                                                {{ getPreviewStopNames(route.stops) }}
                                             </p>
                                         </td>
                                         <td>
