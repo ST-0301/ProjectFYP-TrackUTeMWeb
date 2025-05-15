@@ -1,6 +1,6 @@
 <script setup>
 /* global google */
-import { ref, onMounted, watchEffect, watch, onUnmounted, shallowRef } from 'vue';
+import { ref, onMounted, watch, onUnmounted, shallowRef } from 'vue';
 import loader from '@/utils/googleMapsLoader.js';
 import ArgonAlert from "@/components/ArgonAlert.vue";
 
@@ -88,34 +88,34 @@ const updateMarkers = () => {
         }
         if (markerConfig.draggable) {
             marker.addListener('dragend', (e) => {
-                const position = {
-                    lat: e.latLng.lat(),
-                    lng: e.latLng.lng()
-                };
+                const lat = e.latLng.lat();
+                const lng = e.latLng.lng();
+                const pos = { lat, lng };
                 emit('marker-dragged', {
                     id: markerConfig.id,
-                    position: position,
+                    position: pos,
                     title: markerConfig.title
                 });
+                mapInstance.value.panTo(pos);
             });
         }
         currentMarkers.value.push(marker);
     });
     
-    props.existingStops.forEach(stop => {
-        const blueMarker = new AdvancedMarkerElement.value({
-            position: stop.location,
-            map: mapInstance.value,
-            title: stop.name,
-            gmpClickable: true,
-            // gmpDraggable: false,
-            content: createMarkerElement({ color: '#4285F4' }) // Blue for existing stops
-        });
-        blueMarker.addEventListener('gmp-click', () =>
-            emit('marker-clicked', { id: stop.id, position: stop.location, title: stop.name })
-        );
-        currentMarkers.value.push(blueMarker);
-    });
+    // props.existingStops.forEach(stop => {
+    //     const blueMarker = new AdvancedMarkerElement.value({
+    //         position: stop.location,
+    //         map: mapInstance.value,
+    //         title: stop.name,
+    //         gmpClickable: true,
+    //         // gmpDraggable: false,
+    //         content: createMarkerElement({ color: '#4285F4' }) // Blue for existing stops
+    //     });
+    //     blueMarker.addEventListener('gmp-click', () =>
+    //         emit('marker-clicked', { id: stop.id, position: stop.location, title: stop.name })
+    //     );
+    //     currentMarkers.value.push(blueMarker);
+    // });
 };
 const clearMarkers = () => {
     currentMarkers.value.forEach(marker => marker.setMap(null));
@@ -127,10 +127,14 @@ const setupClickListener = () => {
         google.maps.event.removeListener(clickListener.value);
     }
     clickListener.value = mapInstance.value.addListener('click', (e) => {
+        const lat = e.latLng.lat();
+        const lng = e.latLng.lng();
+        const pos = { lat, lng };
         emit('marker-added', {
-            position: e.latLng.toJSON(),
-            title: `Selected Location ${e.latLng.lat().toFixed(4)}, ${e.latLng.lng().toFixed(4)}`
+            position: pos,
+            title: `Selected Location ${lat.toFixed(4)}, ${lng.toFixed(4)}`
         });
+        mapInstance.value.panTo(pos);
     });
 };
 
@@ -155,11 +159,15 @@ watch(
     },
     { deep: true }
 );
-watchEffect(() => {
-    if (mapInstance.value) {
-        mapInstance.value.setCenter(props.center);
-    }
-});
+watch(
+    () => props.center,
+    (newCenter) => {
+        if (mapInstance.value && newCenter) {
+            mapInstance.value.panTo(newCenter);
+        }
+    },
+    { immediate: true }
+);
 </script>
 
 

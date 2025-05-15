@@ -16,7 +16,7 @@ const drivers = ref([]);
 const buses = ref([]);
 const showSlotModal = ref(false);
 const showDeleteSlotModal = ref(false);
-const currentSlot = ref({ dayType: '', direction: '', index: -1, time: '', driver: '', bus: '' });
+const currentSlot = ref({ dayType: '', direction: '', index: -1, time: '', assignments: [{ driver: '', bus: '' }] });
 const slotToDelete = ref(null);
 const slotErrors = ref({ time: '', general: '' });
 
@@ -96,7 +96,7 @@ function validateSlot() {
 const saveSlot = async () => {
     if (!validateSlot()) return;
 
-    const { dayType, direction, index, time, driver, bus } = currentSlot.value;
+    const { dayType, direction, index, time, assignments } = currentSlot.value;
     const routeId = route.params.id;
     const scheduleRef = doc(routeCollection, routeId, 'schedule', dayType);
     try {
@@ -104,10 +104,17 @@ const saveSlot = async () => {
         const currentData = scheduleSnap.exists() ? scheduleSnap.data() : { inbound: [], outbound: [] };
         const slots = [...currentData[direction]];
 
+        // Filter out empty assignments
+        const validAssignments = assignments.filter(a => a.driver && a.bus);
+        const slotData = {
+            time,
+            assignments: validAssignments
+        };
+
         if (index === -1) {
-            slots.push({ time, driver, bus });
+            slots.push(slotData);
         } else {
-            slots[index] = { time, driver, bus };
+            slots[index] = slotData;
         }
         await setDoc(scheduleRef, {
             ...currentData,
@@ -144,6 +151,15 @@ const deleteSlot = async () => {
     }
     showDeleteSlotModal.value = false;
 };
+const addAssignment = () => {
+    currentSlot.value.assignments.push({ driver: '', bus: '' });
+};
+
+const removeAssignment = (index) => {
+    if (currentSlot.value.assignments.length > 1) {
+        currentSlot.value.assignments.splice(index, 1);
+    }
+};
 
 
 // UI handlers
@@ -154,8 +170,7 @@ const openSlotModal = (direction, index = -1) => {
             direction,
             index: -1,
             time: '',
-            driver: '',
-            bus: ''
+            assignments: [{ driver: '', bus: '' }]
         };
     } else {
         const slot = schedule.value[activeTab.value][direction][index];
@@ -163,7 +178,8 @@ const openSlotModal = (direction, index = -1) => {
             dayType: activeTab.value,
             direction,
             index,
-            ...slot
+            time: slot.time,
+            assignments: slot.assignments?.length ? [...slot.assignments] : [{ driver: '', bus: '' }]
         };
     }
     showSlotModal.value = true;
@@ -233,10 +249,8 @@ watch(() => currentSlot.value.time, () => {
                                             Time</th>
                                         <th
                                             class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Driver</th>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Bus</th>
+                                            Driver → Bus
+                                        </th>
                                         <th
                                             class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
                                             Actions</th>
@@ -248,12 +262,29 @@ watch(() => currentSlot.value.time, () => {
                                             <p class="text-sm font-weight-bold mb-0">{{ slot.time }}</p>
                                         </td>
                                         <td>
-                                            <p class="text-sm font-weight-bold mb-0">{{ slot.driver ?
-                                                getDriverName(slot.driver) : '-' }}</p>
-                                        </td>
-                                        <td>
-                                            <p class="text-sm font-weight-bold mb-0">{{ slot.bus ?
-                                                getBusNumber(slot.bus) : '-' }}</p>
+                                            <div v-for="(assignment, aIndex) in (slot.assignments || [])" :key="aIndex"
+                                                class="assignment-pair mb-2 p-2 bg-light rounded">
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <span class="badge bg-primary">{{ aIndex + 1 }}</span>
+                                                    <div>
+                                                        <span class="text-sm"
+                                                            :class="{ 'text-muted': !assignment.driver }">
+                                                            {{ assignment.driver ? getDriverName(assignment.driver) :
+                                                            'Unassigned driver' }}
+                                                        </span>
+                                                        <span class="mx-2 text-muted">→</span>
+                                                        <span class="text-sm"
+                                                            :class="{ 'text-muted': !assignment.bus }">
+                                                            {{ assignment.bus ? getBusNumber(assignment.bus) :
+                                                            'Unassigned bus' }}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <p v-if="(slot.assignments || []).length === 0"
+                                                class="text-muted text-xs mb-0">
+                                                No assignments
+                                            </p>
                                         </td>
                                         <td class="align-middle">
                                             <button class="btn btn-link text-secondary mb-0 px-1"
@@ -284,10 +315,8 @@ watch(() => currentSlot.value.time, () => {
                                             Time</th>
                                         <th
                                             class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Driver</th>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Bus</th>
+                                            Driver → Bus
+                                        </th>
                                         <th
                                             class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
                                             Actions</th>
@@ -299,12 +328,29 @@ watch(() => currentSlot.value.time, () => {
                                             <p class="text-sm font-weight-bold mb-0">{{ slot.time }}</p>
                                         </td>
                                         <td>
-                                            <p class="text-sm font-weight-bold mb-0">{{ slot.driver ?
-                                                getDriverName(slot.driver) : '-' }}</p>
-                                        </td>
-                                        <td>
-                                            <p class="text-sm font-weight-bold mb-0">{{ slot.bus ?
-                                                getBusNumber(slot.bus) : '-' }}</p>
+                                            <div v-for="(assignment, aIndex) in (slot.assignments || [])" :key="aIndex"
+                                                class="assignment-pair mb-2 p-2 bg-light rounded">
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <span class="badge bg-primary">{{ aIndex + 1 }}</span>
+                                                    <div>
+                                                        <span class="text-sm"
+                                                            :class="{ 'text-muted': !assignment.driver }">
+                                                            {{ assignment.driver ? getDriverName(assignment.driver) :
+                                                            'Unassigned driver' }}
+                                                        </span>
+                                                        <span class="mx-2 text-muted">→</span>
+                                                        <span class="text-sm"
+                                                            :class="{ 'text-muted': !assignment.bus }">
+                                                            {{ assignment.bus ? getBusNumber(assignment.bus) :
+                                                            'Unassigned bus' }}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <p v-if="(slot.assignments || []).length === 0"
+                                                class="text-muted text-xs mb-0">
+                                                No assignments
+                                            </p>
                                         </td>
                                         <td class="align-middle">
                                             <button class="btn btn-link text-secondary mb-0 px-1"
@@ -347,7 +393,7 @@ watch(() => currentSlot.value.time, () => {
                                 {{ slotErrors.time }}
                             </div>
                         </div>
-                        <div class="mb-3">
+                        <!-- <div class="mb-3">
                             <label>Driver</label>
                             <select v-model="currentSlot.driver" class="form-select">
                                 <option value="">Select Driver (optional)</option>
@@ -364,7 +410,38 @@ watch(() => currentSlot.value.time, () => {
                                     {{ bus.licensePlate }}
                                 </option>
                             </select>
+                        </div> -->
+                        <div v-for="(assignment, index) in currentSlot.assignments" :key="index"
+                            class="mb-3 assignment-pair">
+                            <div class="row g-2 align-items-center">
+                                <div class="col-5">
+                                    <select v-model="assignment.driver" class="form-select">
+                                        <option value="">Select Driver</option>
+                                        <option v-for="driver in drivers" :value="driver.id" :key="driver.id">
+                                            {{ driver.name }}
+                                        </option>
+                                    </select>
+                                </div>
+                                <div class="col-5">
+                                    <select v-model="assignment.bus" class="form-select">
+                                        <option value="">Select Bus</option>
+                                        <option v-for="bus in buses" :value="bus.id" :key="bus.id">
+                                            {{ bus.licensePlate }}
+                                        </option>
+                                    </select>
+                                </div>
+                                <div class="col-2">
+                                    <button type="button" class="btn btn-danger" @click="removeAssignment(index)"
+                                        :disabled="currentSlot.assignments.length <= 1">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
+
+                        <ArgonButton color="info" size="sm" @click="addAssignment" class="mb-3">
+                            <i class="fas fa-plus me-2"></i>Add Pair
+                        </ArgonButton>
                     </div>
                     <div class="modal-footer">
                         <div v-if="slotErrors.general" class="alert alert-danger text-sm mt-2">

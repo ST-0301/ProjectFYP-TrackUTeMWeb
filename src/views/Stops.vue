@@ -18,6 +18,7 @@ const currentStop = reactive(createDefaultStop());
 const stopToDelete = ref(null);
 const errors = ref({ name: '', location: '' });
 const mapLoaded = ref(false);
+const routesUsingStop = ref([]);
 
 
 // Lifecycle hooks
@@ -136,6 +137,14 @@ async function updateStop() {
 }
 async function deleteStop() {
     try {
+        const routesQuery = query(routeCollection, where("stops", "array-contains", stopToDelete.value));
+        const routeSnapshot = await getDocs(routesQuery);
+        if (!routeSnapshot.empty) {
+            const routeNames = routeSnapshot.docs.map(doc => doc.data().name).join(', ');
+            errors.value.general = `Cannot delete stop. It is used in route(s): ${routeNames}. Delete the routes first.`;
+            return;
+        }
+
         const stopDocRef = doc(stopCollection, stopToDelete.value);
         await deleteDoc(stopDocRef);
         showDeleteModal.value = false;
@@ -173,8 +182,11 @@ const saveStop = async () => {
         errors.value.general = error.message;
     }
 };
-const confirmDelete = (id) => {
+const confirmDelete = async (id) => {
     stopToDelete.value = id;
+    const routesQuery = query(routeCollection, where("stops", "array-contains", id));
+    const routeSnapshot = await getDocs(routesQuery);
+    routesUsingStop.value = routeSnapshot.docs.map(doc => doc.data());
     showDeleteModal.value = true;
 };
 const closeModal = () => {
@@ -374,6 +386,8 @@ watch(() => currentStop.location, (newVal) => {
                                                 </div>
                                                 <GoogleMapPicker v-if="showAddStopModal"
                                                     v-model:location="currentStop.location" :existing-stops="stops"
+                                                    :is-editing="editingStop"
+                                                    :editing-stop-id="editingStop ? currentStop.id : null"
                                                     class="mt-3 stop-page-map flex-grow-1" />
                                             </div>
                                         </div>
@@ -411,10 +425,19 @@ watch(() => currentStop.location, (newVal) => {
                                     <button type="button" class="btn-close" @click="showDeleteModal = false"></button>
                                 </div>
                                 <div class="modal-body">
-                                    <p>Are you sure you want to delete this bus stop?</p>
+                                    <div v-if="routesUsingStop.length > 0">
+                                        <p class="text-danger">This stop is used in the following routes and cannot be
+                                            deleted:</p>
+                                        <ul>
+                                            <li v-for="route in routesUsingStop" :key="route.id">{{ route.name }}</li>
+                                        </ul>
+                                        <p>Please delete these routes first.</p>
+                                    </div>
+                                    <p v-else>Are you sure you want to delete this bus stop?</p>
                                 </div>
                                 <div class="modal-footer">
-                                    <argon-button color="danger" @click="deleteStop">Delete</argon-button>
+                                    <argon-button color="danger" @click="deleteStop"
+                                        :disabled="routesUsingStop.length > 0">Delete</argon-button>
                                     <argon-button color="secondary"
                                         @click="showDeleteModal = false">Cancel</argon-button>
                                 </div>
