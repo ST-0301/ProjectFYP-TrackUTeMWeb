@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, watch, nextTick, reactive } from 'vue';
-import { deleteDoc, updateDoc, setDoc, onSnapshot, doc, getDocs, query, where } from 'firebase/firestore';
+import { deleteDoc, updateDoc, setDoc, onSnapshot, doc, getDocs, query, where, GeoPoint } from 'firebase/firestore';
 import { stopCollection } from '@/firebase';
 import { routeCollection } from '@/firebase';
 import ArgonButton from "@/components/ArgonButton.vue";
@@ -117,10 +117,10 @@ async function createStop() {
         const stopData = {
             stopId: newStopRef.id,
             name: currentStop.name,
-            location: {
-                lat: currentStop.location.lat,
-                lng: currentStop.location.lng
-            },
+            location: new GeoPoint( // Convert to GeoPoint
+                currentStop.location.lat,
+                currentStop.location.lng
+            ),
             created: new Date().toISOString()
         };
         await setDoc(newStopRef, stopData);
@@ -133,7 +133,10 @@ async function updateStop() {
     const stopDocRef = doc(stopCollection, currentStop.id);
     const updates = {
         name: currentStop.name,
-        location: currentStop.location
+        location: new GeoPoint( // Convert to GeoPoint
+            currentStop.location.lat,
+            currentStop.location.lng
+        )
     };
     await updateDoc(stopDocRef, updates);
 }
@@ -165,9 +168,15 @@ const addStop = () => {
     showAddStopModal.value = true;
 };
 const editStop = async (stop) => {
-    Object.assign(currentStop, stop);
+    Object.assign(currentStop, {
+        ...stop,
+        location: { // Convert GeoPoint to { lat, lng }
+            lat: stop.location.latitude,
+            lng: stop.location.longitude
+        }
+    });
     editingStop.value = true;
-    mapCenter.value = { lat: stop.location.lat, lng: stop.location.lng };
+    mapCenter.value = { lat: stop.location.latitude, lng: stop.location.longitude };
     showAddStopModal.value = true;
     await nextTick();
     mapLoaded.value = true;
@@ -290,8 +299,8 @@ watch(() => currentStop.location, (newVal) => {
                                         </td>
                                         <td>
                                             <p class="text-sm font-weight-bold mb-0">
-                                                {{ Number(stop.location.lat).toFixed(6) }},
-                                                {{ Number(stop.location.lng).toFixed(6) }}
+                                                {{ Number(stop.location.latitude).toFixed(6) }},
+                                                {{ Number(stop.location.longitude).toFixed(6) }}
                                             </p>
                                         </td>
                                         <td>

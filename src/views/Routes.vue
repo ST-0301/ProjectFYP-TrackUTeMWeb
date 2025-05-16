@@ -1,8 +1,7 @@
 <script setup>
 import { ref, onMounted, reactive, watch } from 'vue';
-import { deleteDoc, updateDoc, setDoc, onSnapshot, doc, getDocs, query, where } from 'firebase/firestore'; 
-import { routeCollection } from '@/firebase';
-import { stopCollection } from '@/firebase';
+import { updateDoc, setDoc, onSnapshot, doc, getDocs, query, where, collection, writeBatch } from 'firebase/firestore'; 
+import { routeCollection, stopCollection, db } from '@/firebase';
 import GoogleMapPicker from '@/views/components/GoogleMapPicker.vue';
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
@@ -17,6 +16,8 @@ const editingRoute = ref(false);
 const currentRoute = reactive(createDefaultRoute());
 const routeToDelete = ref(null);
 const errors = ref({ name: '', stops: '' });
+const DEFAULT_CENTER = { lat: 2.3114, lng: 102.3203 };
+const mapCenter = ref({ ...DEFAULT_CENTER });
 
 
 // Lifecycle hooks
@@ -106,7 +107,7 @@ async function saveRoute() {
             await updateDoc(doc(routeCollection, currentRoute.id), routeData);
         } else {
             const newRouteRef = doc(routeCollection);
-            await setDoc(newRouteRef, { ...routeData, id: newRouteRef.id });
+            await setDoc(newRouteRef, { ...routeData, routeId: newRouteRef.id });
         }
         closeModal();
     } catch (error) {
@@ -120,11 +121,19 @@ async function saveRoute() {
 const addRoute = () => {
     Object.assign(currentRoute, createDefaultRoute());
     editingRoute.value = false;
+    mapCenter.value = { ...DEFAULT_CENTER };
     showAddRouteModal.value = true;
 };
 const editRoute = (route) => {
     Object.assign(currentRoute, route);
     editingRoute.value = true;
+    if (route.stops.length) { 
+        const firstStop = stops.value.find(s => s.id === route.stops[0]);
+        if (firstStop) mapCenter.value = {
+            lat: firstStop.location.latitude,
+            lng: firstStop.location.longitude
+        };
+    }
     showAddRouteModal.value = true;
 };
 const confirmDelete = (id) => {
@@ -133,8 +142,22 @@ const confirmDelete = (id) => {
 };
 const deleteRoute = async () => {
     try {
-        await deleteDoc(doc(routeCollection, routeToDelete.value));
-        showDeleteModal.value = false;
+        const routeId = routeToDelete.value;
+        const routeDocRef = doc(routeCollection, routeId);
+
+        // 1. Delete schedule subcollection
+        const scheduleColRef = collection(db, `routes/${routeId}/schedule`);
+        const scheduleSnapshot = await getDocs(scheduleColRef);
+
+        // 2. Batch delete operations
+        const batch = writeBatch(db);
+        scheduleSnapshot.forEach(scheduleDoc => {
+            batch.delete(scheduleDoc.ref);
+        });
+        batch.delete(routeDocRef); // Add route deletion to batch
+
+        // 3. Commit atomic operation
+        await batch.commit();        showDeleteModal.value = false;
     } catch (error) {
         console.error("Error deleting route:", error);
     }
@@ -309,8 +332,8 @@ watch(() => currentRoute.stops, () => {
                                                     Click on the map below to select stops
                                                 </div>
                                                 <GoogleMapPicker v-if="showAddRouteModal" :existing-stops="stops"
-                                                    :enable-click-to-add="false" :enable-draggable-markers="false"
-                                                    @marker-clicked="handleStopClick"
+                                                    :center="mapCenter" :enable-click-to-add="false"
+                                                    :enable-draggable-markers="false" @marker-clicked="handleStopClick"
                                                     class="mt-3 stop-page-map flex-grow-1" />
                                             </div>
                                         </div>

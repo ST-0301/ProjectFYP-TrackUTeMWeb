@@ -13,9 +13,10 @@ const props = defineProps({
     enableDraggableMarkers: { type: Boolean, default: true },
 });
 const emit = defineEmits(['update:location', 'marker-clicked']);
+const DEFAULT_CENTER = { lat: 2.3114, lng: 102.3203 };
 const internalLocation = reactive({
-    lat: props.location.lat,
-    lng: props.location.lng
+    lat: props.location.lat ?? DEFAULT_CENTER.lat,
+    lng: props.location.lng ?? DEFAULT_CENTER.lng
 });
 const markers = ref([]);
 // const mapCenter = computed(() => ({
@@ -39,7 +40,10 @@ watch(
             .filter(stop => !(props.isEditing && stop.id === props.editingStopId))
             .map(stop => ({
                 id: stop.id,
-                position: stop.location,
+                position: { // Convert GeoPoint to lat/lng object
+                    lat: stop.location.latitude,
+                    lng: stop.location.longitude
+                },
                 title: stop.name,
                 clickable: true,
                 draggable: false,

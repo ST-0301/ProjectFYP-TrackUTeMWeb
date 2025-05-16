@@ -75,11 +75,18 @@ const initializeMap = async () => {
 const updateMarkers = () => {
     clearMarkers();
     [...props.markers].forEach(markerConfig => { 
+        if (typeof markerConfig.position?.lat !== 'number' ||
+            typeof markerConfig.position?.lng !== 'number') {
+            console.error('Invalid marker position:', markerConfig.position);
+            return; // Skip invalid markers
+        }
+
         const marker = new AdvancedMarkerElement.value({
             position: markerConfig.position,
             map: mapInstance.value,
             title: markerConfig.title,
-            gmpDraggable: props.enableDraggableMarkers,
+            gmpDraggable: !!markerConfig.draggable,
+            gmpClickable: !!markerConfig.clickable,
             content: createMarkerElement({ color: markerConfig.color || '#EA4335' }) 
         });
         if (markerConfig.clickable) {
@@ -104,7 +111,10 @@ const updateMarkers = () => {
     
     // props.existingStops.forEach(stop => {
     //     const blueMarker = new AdvancedMarkerElement.value({
-    //         position: stop.location,
+    //         position: { // Convert GeoPoint to lat/lng
+    //             lat: stop.location.latitude,
+    //             lng: stop.location.longitude
+    //         },
     //         map: mapInstance.value,
     //         title: stop.name,
     //         gmpClickable: true,
@@ -112,7 +122,14 @@ const updateMarkers = () => {
     //         content: createMarkerElement({ color: '#4285F4' }) // Blue for existing stops
     //     });
     //     blueMarker.addEventListener('gmp-click', () =>
-    //         emit('marker-clicked', { id: stop.id, position: stop.location, title: stop.name })
+    //         emit('marker-clicked', {
+    //             id: stop.id,
+    //             position: {
+    //                 lat: stop.location.latitude,
+    //                 lng: stop.location.longitude
+    //             },
+    //             title: stop.name
+    //         })
     //     );
     //     currentMarkers.value.push(blueMarker);
     // });
@@ -162,7 +179,7 @@ watch(
 watch(
     () => props.center,
     (newCenter) => {
-        if (mapInstance.value && newCenter) {
+        if (mapInstance.value && newCenter && typeof newCenter.lat === 'number' && typeof newCenter.lng === 'number') {
             mapInstance.value.panTo(newCenter);
         }
     },
