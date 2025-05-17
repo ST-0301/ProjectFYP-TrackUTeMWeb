@@ -29,12 +29,12 @@ onMounted(async () => {
     const routeSnap = await getDoc(routeRef);
     if (routeSnap.exists()) currentRoute.value = routeSnap.data();
 
-    schedule.value = Object.fromEntries(days.map(day => [day, { incampus: [], outcampus: [] }]));
+    schedule.value = Object.fromEntries(days.map(day => [ day, { incampus: [], outcampus: [] } ]));
 
     await Promise.all(days.map(async day => {
         const ref = doc(routeCollection, routeId, 'schedule', day);
         const snap = await getDoc(ref);
-        if (snap.exists()) {
+        if (snap.exists()) { 
             schedule.value[day].incampus = snap.data().incampus || [];
             schedule.value[day].outcampus = snap.data().outcampus || [];
         }
@@ -114,8 +114,8 @@ const validateSlot = () => {
             }
         }
     }
-    if (currentSlot.value.assignments.some(a => (a.driver && !a.bus) || (!a.driver && a.bus))) {
-        slotErrors.value.general = 'Select both driver and bus for each assignment or leave both empty';
+    if (currentSlot.value.assignments.some(a => !a.driver || !a.bus)) {
+        slotErrors.value.general = 'Select both driver and bus for each assignment';
         valid = false;
     }
     return valid;
@@ -368,6 +368,7 @@ watch(() => currentSlot.value.assignments, () => {
                         </div>
 
                         <div class="mb-3">
+                            <!-- Add Mode -->
                             <div v-if="currentSlot.index === -1">
                                 <label class="form-label">Day</label>
                                 <div class="d-flex flex-wrap gap-3">
@@ -382,35 +383,32 @@ watch(() => currentSlot.value.assignments, () => {
                                     </div>
                                 </div>
                             </div>
+                            <!-- Edit Mode -->
+                            <div v-else>
+                                <input type="hidden" v-model="currentSlot.days" :value="[currentSlot.initialDay]" />
+                            </div>
                         </div>
 
                         <div class="mb-3">
                             <label class="form-label">Assignment</label>
                             <div v-for="(assignment, idx) in currentSlot.assignments" :key="idx"
                                 class="d-flex mb-3 align-items-center gap-2">
-
                                 <select class="form-select" v-model="assignment.driver"
-                                    @change="updateAssignment(idx, 'driver', $event.target.value)" :class="{
-                                        'is-invalid': (assignment.driver && !assignment.bus) ||
-                                            (!assignment.driver && assignment.bus)
-                                    }">
+                                    @change="updateAssignment(idx, 'driver', $event.target.value)"
+                                    :class="{ 'is-invalid': !assignment.driver && assignment.bus || assignment.driver && !assignment.bus }">
                                     <option value="">Select Driver</option>
                                     <option v-for="d in availableDrivers(assignment)" :key="d.id" :value="d.id"
                                         :disabled="usedDrivers.has(d.id) && d.id !== assignment.driver">{{ d.name }}
                                     </option>
                                 </select>
-
                                 <select class="form-select" v-model="assignment.bus"
-                                    @change="updateAssignment(idx, 'bus', $event.target.value)" :class="{
-                                        'is-invalid': (assignment.bus && !assignment.driver) ||
-                                            (!assignment.bus && assignment.driver)
-                                    }">
+                                    @change="updateAssignment(idx, 'bus', $event.target.value)"
+                                    :class="{ 'is-invalid': !assignment.bus && assignment.driver || assignment.bus && !assignment.driver }">
                                     <option value="">Select Bus</option>
                                     <option v-for="b in availableBuses(assignment)" :key="b.id" :value="b.id"
                                         :disabled="usedBuses.has(b.id) && b.id !== assignment.bus">{{ b.licensePlate }}
                                     </option>
                                 </select>
-                                
                                 <argon-button color="danger" @click="removeAssignment(idx)"
                                     :disabled="currentSlot.assignments.length <= 1">
                                     <i class="fas fa-trash"></i>
@@ -438,8 +436,6 @@ watch(() => currentSlot.value.assignments, () => {
         <div class="modal-backdrop fade show" v-if="showSlotModal"></div>
     </div>
 </template>
-
-
 
 <style scoped>
 .tabs-container.justify-content-center {

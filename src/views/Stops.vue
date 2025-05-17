@@ -79,7 +79,7 @@ const getRouteNamesForStop = (stopId) => {
 };
 
 
-// Validation functions
+// Validation function
 const validateForm = async () => {
     errors.value = { name: '', location: '' };
     let isValid = true;
@@ -406,7 +406,7 @@ watch(() => currentStop.location, (newVal) => {
                                         </div>
 
                                         <div class="col-12 mt-2">
-                                            <div v-if="errors.general" class="alert alert-danger text-sm mt-2">
+                                            <div v-if="errors.general" class="text-danger text-sm text-sm mt-2">
                                                 {{ errors.general }}
                                             </div>
                                             <div class="d-flex justify-content-end gap-3 mt-2">

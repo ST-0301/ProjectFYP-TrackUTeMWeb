@@ -457,7 +457,7 @@ const formatPhoneInput = (event) => {
                                                 <option value="inactive">Inactive</option>
                                             </select>
                                         </div>
-                                        <div v-if="errors.general" class="alert alert-danger text-sm mt-2">
+                                        <div v-if="errors.general" class="text-danger text-sm text-sm mt-2">
                                             {{ errors.general }}
                                         </div>
                                         <div class="d-flex justify-content-end gap-3 mt-4">
