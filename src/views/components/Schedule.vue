@@ -1,23 +1,24 @@
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { routeCollection, stopCollection, driverCollection, busCollection } from '@/firebase';
-import { doc, getDoc, getDocs, setDoc, onSnapshot } from 'firebase/firestore';
+import { scheduleCollection, routeCollection, stopCollection, driverCollection, busCollection } from '@/firebase';
+import { query, where, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonCheckbox from "@/components/ArgonCheckbox.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
 
 
 // Reactive state
-const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const route = useRoute();
 const currentRoute = ref({});
 const stops = ref([]);
-const schedule = ref(Object.fromEntries(days.map(day => [day, { incampus: [], outcampus: [] }])));
+const schedule = ref({});
 const drivers = ref([]);
 const buses = ref([]);
 const activeTab = ref('incampus');
 const showSlotModal = ref(false);
+const showDeleteModal = ref(false);
 const currentSlot = ref({ days: [], index: -1, time: '', assignments: [{ driver: '', bus: '' }], originalDays: [] });
 const slotErrors = ref({ time: '', days: '', general: '' });
 
@@ -28,18 +29,26 @@ onMounted(async () => {
     const routeRef = doc(routeCollection, routeId);
     const routeSnap = await getDoc(routeRef);
     if (routeSnap.exists()) currentRoute.value = routeSnap.data();
-
-    schedule.value = Object.fromEntries(days.map(day => [day, { incampus: [], outcampus: [] }]));
-
-    await Promise.all(days.map(async day => {
-        const ref = doc(routeCollection, routeId, 'schedule', day);
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-            schedule.value[day].incampus = snap.data().incampus || [];
-            schedule.value[day].outcampus = snap.data().outcampus || [];
+    const q = query(scheduleCollection, where('routeId', '==', routeId));
+    const querySnapshot = await getDocs(q);
+    days.forEach(day => {
+        schedule.value[day.toLowerCase()] = { incampus: [], outcampus: [] };
+    });
+    querySnapshot.forEach((doc) => {
+        const sched = doc.data();
+        const day = sched.day.toLowerCase();
+        const type = sched.type.toLowerCase();
+        if (schedule.value[day] && schedule.value[day][type]) {
+            schedule.value[day][type].push({
+                id: doc.id,
+                time: sched.time,
+                assignments: sched.assignments,
+                status: sched.status,
+                busId: sched.busId,
+                driverId: sched.driverId
+            });
         }
-    }));
-
+    });
     onSnapshot(stopCollection, snapshot => stops.value = snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     const [driversSnap, busesSnap] = await Promise.all([
         getDocs(driverCollection),
@@ -64,34 +73,39 @@ const getStopNames = (stopIds) => {
 const getAllTimes = () => {
     const allTimes = new Set();
     days.forEach(day => {
-        const directionSlots = schedule.value[day][activeTab.value] || [];
+        const daySchedule = schedule.value[day] || {};
+        const directionSlots = daySchedule[activeTab.value] || [];
         directionSlots.forEach(slot => {
             if (slot?.time) allTimes.add(slot.time);
         });
     });
     return Array.from(allTimes).sort();
 };
-const getSlotIndex = (day, time) =>
-    schedule.value[day][activeTab.value].findIndex(s => s.time === time);
+const getSlotIndex = (day, time) => {
+    const daySchedule = schedule.value[day] || {};
+    const slots = daySchedule[activeTab.value] || [];
+    return slots.findIndex(s => s.time === time);
+};
 const getCounts = (day, time) => {
-    const index = getSlotIndex(day, time);
-    if (index === -1) return { drivers: 0, buses: 0 };
-    const slot = schedule.value[day][activeTab.value][index];
+    const type = activeTab.value;
+    const entries = schedule.value[day]?.[type]?.filter(s => s.time === time) || [];
     return {
-        drivers: slot.assignments.length || 0,
-        buses: slot.assignments.length || 0
+        drivers: entries.length,
+        buses: entries.length
     };
 };
 const checkExistingTimes = () => {
     const conflicts = [];
     currentSlot.value.days.forEach(day => {
-        const directionSlots = schedule.value[day][activeTab.value] || [];
+        const lowerDay = day.toLowerCase();
+        const directionSlots = schedule.value[lowerDay]?.[activeTab.value] || [];
         if (directionSlots.some(slot => slot.time === currentSlot.value.time)) {
             conflicts.push(day);
         }
     });
     return conflicts;
 };
+const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
 
 
 // Validation function
@@ -126,40 +140,93 @@ const validateSlot = () => {
 const saveSlot = async () => {
     try {
         if (!validateSlot()) return;
-        const { days: selectedDays, time, assignments, initialDay } = currentSlot.value;
+        const { days: selectedDays, time, assignments, isEditing, originalTime } = currentSlot.value;
         const routeId = route.params.id;
+        const type = activeTab.value;
         const validAssignments = assignments
-            .filter(a => a.driver && a.bus)
-            .map(a => ({ driver: a.driver, bus: a.bus }));
+            .filter(a => a.driver && a.bus);
+        if (isEditing) {
+            const originalDay = currentSlot.value.days[0].toLowerCase();
+            const q = query(
+                scheduleCollection,
+                where('routeId', '==', routeId),
+                where('type', '==', type),
+                where('day', '==', originalDay),
+                where('time', '==', originalTime)
+            );
+            const querySnapshot = await getDocs(q);
+            const existingDocs = new Map();
+            querySnapshot.forEach(doc => {
+                existingDocs.set(doc.id, doc.ref);
+            });
+            const updatePromises = [];
+            const deletePromises = [];
+            assignments.forEach(assignment => {
+                if (assignment.id) {
+                    if (existingDocs.has(assignment.id)) {
+                        // Update existing document
+                        updatePromises.push(
+                            updateDoc(existingDocs.get(assignment.id), {
+                                time: time,
+                                driverId: assignment.driver,
+                                busId: assignment.bus
+                            }));
+                        existingDocs.delete(assignment.id);
+                    }
+                } else {
+                    // Create new document
+                    updatePromises.push(
+                        addDoc(scheduleCollection, {
+                            day: originalDay,
+                            type,
+                            routeId,
+                            time,
+                            driverId: assignment.driver,
+                            busId: assignment.bus,
+                            status: 'scheduled',
+                            created: new Date()
+                        })
+                    );
+                }
+            });
+            existingDocs.forEach(ref => {
+                deletePromises.push(deleteDoc(ref));
+            });
 
-        // Edit Mode
-        if (currentSlot.value.index !== -1) {
-            const ref = doc(routeCollection, routeId, 'schedule', initialDay);
-            const directionSlots = [...schedule.value[initialDay][activeTab.value]];
-            directionSlots[currentSlot.value.index] = {
-                ...directionSlots[currentSlot.value.index],
-                time,
-                assignments: validAssignments
-            };
-            await setDoc(ref, { [activeTab.value]: directionSlots.sort((a, b) => a.time.localeCompare(b.time)) }, { merge: true });
-            schedule.value[initialDay][activeTab.value] = directionSlots;
-        }
-        // Add Mode
-        else {
-            const finalConflicts = checkExistingTimes();
-            if (finalConflicts.length > 0) {
-                slotErrors.value.general = `Conflict detected in: ${finalConflicts.join(', ')}`;
-                return;
+            await Promise.all([...updatePromises, ...deletePromises]);
+        } else {
+            // Create new documents for each selected day and each assignment
+            const promises = [];
+            for (const day of selectedDays) {
+                const lowerDay = day.toLowerCase();
+                for (const assignment of validAssignments) {
+                    promises.push(
+                        addDoc(scheduleCollection, {
+                            day: lowerDay,
+                            type,
+                            routeId,
+                            time,
+                            status: 'scheduled',
+                            driverId: assignment.driver,
+                            busId: assignment.bus,
+                            created: new Date()
+                        })
+                    );
+                }
             }
-            await Promise.all(selectedDays.map(async day => {
-                const ref = doc(routeCollection, routeId, 'schedule', day);
-                const directionData = [...schedule.value[day][activeTab.value]];
-                directionData.push({ time, assignments: validAssignments });
-
-                await setDoc(ref, { [activeTab.value]: directionData.sort((a, b) => a.time.localeCompare(b.time)) }, { merge: true });
-                schedule.value[day][activeTab.value] = directionData;
-            }));
+            await Promise.all(promises);
         }
+        const refreshQ = query(scheduleCollection, where('routeId', '==', routeId));
+        const refreshSnapshot = await getDocs(refreshQ);
+        days.forEach(day => {
+            schedule.value[day] = { incampus: [], outcampus: [] };
+        });
+        refreshSnapshot.forEach(doc => {
+            const sched = doc.data();
+            const day = sched.day.toLowerCase();
+            const type = sched.type.toLowerCase();
+            schedule.value[day][type].push({ ...sched, id: doc.id });
+        });
         closeModal();
     } catch (error) {
         console.error("Save error:", error);
@@ -167,42 +234,74 @@ const saveSlot = async () => {
     }
 };
 const deleteSlot = async () => {
-    const { initialDay, index } = currentSlot.value;
-    const routeId = route.params.id;
-    const ref = doc(routeCollection, routeId, 'schedule', initialDay);
-    const directionData = schedule.value[initialDay][activeTab.value].filter((_, i) => i !== index);
-    await setDoc(ref, { [activeTab.value]: directionData }, { merge: true });
-    schedule.value[initialDay][activeTab.value] = directionData;
-    closeModal();
+    try {
+        const routeId = route.params.id;
+        const type = activeTab.value;
+        const day = currentSlot.value.days[0].toLowerCase();
+        const time = currentSlot.value.originalTime;
+
+        // Query all matching documents
+        const q = query(
+            scheduleCollection,
+            where('routeId', '==', routeId),
+            where('type', '==', type),
+            where('day', '==', day),
+            where('time', '==', time)
+        );
+        const querySnapshot = await getDocs(q);
+        const deletePromises = [];
+        querySnapshot.forEach(doc => {
+            deletePromises.push(deleteDoc(doc.ref));
+        });
+        await Promise.all(deletePromises);
+        schedule.value[day][type] = schedule.value[day][type].filter(s => s.time !== time);
+
+        closeModal();
+        showDeleteModal.value = false;
+    } catch (error) {
+        console.error("Delete error:", error);
+        slotErrors.value.general = "Failed to delete. Please try again.";
+    }
 };
 
 
 // UI handlers
-const openModal = (initialDay, time = '') => {
-    const index = time ? getSlotIndex(initialDay, time) : -1;
-    if (index === -1) {
-        // Add Mode
+const openModal = async (initialDay, time = '') => {
+    const lowerDay = initialDay.toLowerCase();
+    const routeId = route.params.id;
+    const type = activeTab.value;
+    if (time) {
+        // Query all documents for this time slot
+        const q = query(
+            scheduleCollection,
+            where('routeId', '==', routeId),
+            where('type', '==', type),
+            where('day', '==', lowerDay),
+            where('time', '==', time)
+        );
+        const querySnapshot = await getDocs(q);
+        currentSlot.value = {
+            days: [initialDay],
+            originalDays: [initialDay],
+            originalTime: time,
+            time: time,
+            initialDay: initialDay,
+            assignments: querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                driver: doc.data().driverId,
+                bus: doc.data().busId
+            })),
+            isEditing: true
+        };
+    } else {
         currentSlot.value = {
             days: [initialDay],
             originalDays: [],
             index: -1,
             time: '',
             assignments: [{ driver: '', bus: '' }],
-            initialDay: initialDay
-        };
-    } else {
-        // Edit Mode
-        currentSlot.value = {
-            days: [initialDay],
-            originalDays: [initialDay],
-            index,
-            time,
             initialDay,
-            assignments: [
-                ...schedule.value[initialDay][activeTab.value][index].assignments.map(a => ({
-                    driver: a.driver || '',
-                    bus: a.bus || ''
-                }))]
+            isEditing: false
         };
     }
     showSlotModal.value = true;
@@ -310,7 +409,7 @@ watch(() => currentSlot.value.assignments, () => {
                                 <th class="text-sm text-center bg-light" style="width: 90px">Time</th>
                                 <th v-for="day in days" :key="day" class="text-sm text-center bg-light px-3 py-3">
                                     <div class="d-flex align-items-center justify-content-center gap-2">
-                                        <span class="text-truncate">{{ day }}</span>
+                                        <span class="text-truncate">{{ capitalize(day) }}</span>
                                         <button class="btn btn-link mb-0 p-0" @click="openModal(day)"
                                             title="Add time slot">
                                             <i class="fas fa-plus-circle fs-6"></i>
@@ -354,7 +453,8 @@ watch(() => currentSlot.value.assignments, () => {
                         <h5 class="modal-title">
                             {{ currentSlot.index === -1 ? 'Add Time Slot' : 'Edit Time Slot' }}
                             <span v-if="currentSlot.index !== -1" class="text-muted text-sm">
-                                ({{ currentSlot.initialDay }} - {{ activeTab === 'incampus' ? 'In Campus' : 'Out Campus'
+                                ({{ capitalize(currentSlot.initialDay) }} - {{ activeTab === 'incampus' ? 'In Campus' :
+                                'Out Campus'
                                 }})
                             </span>
                         </h5>
@@ -374,7 +474,7 @@ watch(() => currentSlot.value.assignments, () => {
                                     <div v-for="day in days" :key="day" class="form-check d-flex align-items-center">
                                         <argon-checkbox :id="`day-${day}`" v-model="currentSlot.days" :value="day" />
                                         <label :for="`day-${day}`" class="form-check-label ms-2 mb-0">
-                                            {{ day }}
+                                            {{ capitalize(day) }}
                                         </label>
                                     </div>
                                     <div v-if="slotErrors.days" class="text-danger text-sm mt-1">
@@ -410,7 +510,7 @@ watch(() => currentSlot.value.assignments, () => {
                                         :disabled="usedBuses.has(b.id) && b.id !== assignment.bus">{{ b.licensePlate }}
                                     </option>
                                 </select>
-                                
+
                                 <argon-button color="danger" @click="removeAssignment(idx)"
                                     :disabled="currentSlot.assignments.length <= 1">
                                     <i class="fas fa-trash"></i>
@@ -426,7 +526,7 @@ watch(() => currentSlot.value.assignments, () => {
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <argon-button color="danger" v-if="currentSlot.index !== -1" @click="deleteSlot">
+                        <argon-button color="danger" v-if="currentSlot.isEditing" @click="showDeleteModal = true">
                             Delete Slot
                         </argon-button>
                         <argon-button color="secondary" @click="closeModal">Cancel</argon-button>
@@ -436,6 +536,26 @@ watch(() => currentSlot.value.assignments, () => {
             </div>
         </div>
         <div class="modal-backdrop fade show" v-if="showSlotModal"></div>
+
+        <!-- Delete confirmation modal -->
+        <div class="modal fade" :class="{ 'show d-block': showDeleteModal }" tabindex="-1" role="dialog"
+            v-if="showDeleteModal">
+            <div class="modal-dialog modal-dialog-centered" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Confirm Delete</h5>
+                        <button type="button" class="btn-close" @click="showDeleteModal = false"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Are you sure you want to delete this time slot?</p>
+                    </div>
+                    <div class="modal-footer">
+                        <argon-button color="danger" @click="deleteSlot">Delete</argon-button>
+                        <argon-button color="secondary" @click="showDeleteModal = false">Cancel</argon-button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
