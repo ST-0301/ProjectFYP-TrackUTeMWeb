@@ -1,3 +1,4 @@
+S<!-- GoogleMap.vue -->
 <script setup>
 /* global google */
 import { ref, onMounted, watch, onUnmounted, shallowRef } from 'vue';
@@ -9,7 +10,7 @@ const props = defineProps({
     center: { type: Object, required: true },
     zoom: { type: Number, default: 15 },
     markers: { type: Array, default: () => [] },
-    existingStops: { type: Array, default: () => [] },
+    existingRPoints: { type: Array, default: () => [] },
     mapOptions: {
         type: Object,
         default: () => ({
@@ -30,6 +31,19 @@ const loading = ref(true);
 const error = ref(null);
 const currentMarkers = ref([]);
 const clickListener = ref(null);
+
+
+// Lifecycle hooks
+onMounted(initializeMap);
+onUnmounted(() => {
+    if (clickListener.value && mapInstance.value) {
+        google.maps.event.removeListener(clickListener.value);
+    }
+    clearMarkers();
+    if (mapInstance.value) {
+        mapInstance.value = null;
+    }
+});
 
 
 // Helper function
@@ -78,7 +92,7 @@ const updateMarkers = () => {
         if (typeof markerConfig.position?.lat !== 'number' ||
             typeof markerConfig.position?.lng !== 'number') {
             console.error('Invalid marker position:', markerConfig.position);
-            return; // Skip invalid markers
+            return; 
         }
 
         const marker = new AdvancedMarkerElement.value({
@@ -108,31 +122,6 @@ const updateMarkers = () => {
         }
         currentMarkers.value.push(marker);
     });
-    
-    // props.existingStops.forEach(stop => {
-    //     const blueMarker = new AdvancedMarkerElement.value({
-    //         position: { // Convert GeoPoint to lat/lng
-    //             lat: stop.location.latitude,
-    //             lng: stop.location.longitude
-    //         },
-    //         map: mapInstance.value,
-    //         title: stop.name,
-    //         gmpClickable: true,
-    //         // gmpDraggable: false,
-    //         content: createMarkerElement({ color: '#4285F4' }) // Blue for existing stops
-    //     });
-    //     blueMarker.addEventListener('gmp-click', () =>
-    //         emit('marker-clicked', {
-    //             id: stop.id,
-    //             position: {
-    //                 lat: stop.location.latitude,
-    //                 lng: stop.location.longitude
-    //             },
-    //             title: stop.name
-    //         })
-    //     );
-    //     currentMarkers.value.push(blueMarker);
-    // });
 };
 const clearMarkers = () => {
     currentMarkers.value.forEach(marker => marker.setMap(null));
@@ -147,6 +136,7 @@ const setupClickListener = () => {
         const lat = e.latLng.lat();
         const lng = e.latLng.lng();
         const pos = { lat, lng };
+
         emit('marker-added', {
             position: pos,
             title: `Selected Location ${lat.toFixed(4)}, ${lng.toFixed(4)}`
@@ -156,32 +146,28 @@ const setupClickListener = () => {
 };
 
 
-// Lifecycle hooks
-onMounted(initializeMap);
-onUnmounted(() => {
-    if (clickListener.value && mapInstance.value) {
-        google.maps.event.removeListener(clickListener.value);
-    }
-    clearMarkers();
-    if (mapInstance.value) {
-        mapInstance.value = null;
-    }
-});
-watch(
-    () => props.markers,
-    () => {
+// Watchers
+watch(() => props.markers, () => {
         if (mapInstance.value) {
             updateMarkers();
         }
     },
     { deep: true }
 );
-watch(
-    () => props.center,
-    (newCenter) => {
+watch(() => props.center, (newCenter) => {
         if (mapInstance.value && newCenter && typeof newCenter.lat === 'number' && typeof newCenter.lng === 'number') {
             mapInstance.value.panTo(newCenter);
         }
+    },
+    { immediate: true }
+);
+watch(() => props.enableClickToAdd, (enabled) => {
+        if (!mapInstance.value) return;
+        if (clickListener.value) {
+            google.maps.event.removeListener(clickListener.value);
+            clickListener.value = null;
+        }
+        if (enabled) setupClickListener();
     },
     { immediate: true }
 );

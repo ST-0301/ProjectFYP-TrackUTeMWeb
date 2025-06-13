@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { scheduleCollection, routeCollection, stopCollection, driverCollection, busCollection } from '@/firebase';
+import { scheduleCollection, routeCollection, rPointCollection, driverCollection, busCollection } from '@/firebase';
 import { query, where, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonCheckbox from "@/components/ArgonCheckbox.vue";
@@ -12,7 +12,7 @@ import ArgonInput from "@/components/ArgonInput.vue";
 const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const route = useRoute();
 const currentRoute = ref({});
-const stops = ref([]);
+const rPoints = ref([]);
 const schedule = ref({});
 const drivers = ref([]);
 const buses = ref([]);
@@ -49,7 +49,7 @@ onMounted(async () => {
             });
         }
     });
-    onSnapshot(stopCollection, snapshot => stops.value = snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    onSnapshot(rPointCollection, snapshot => rPoints.value = snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     const [driversSnap, busesSnap] = await Promise.all([
         getDocs(driverCollection),
         getDocs(busCollection)
@@ -60,15 +60,15 @@ onMounted(async () => {
 
 
 // Helper functions
-const getStopNames = (stopIds) => {
-    if (!Array.isArray(stopIds) || stops.value.length === 0) {
+const getRPointNames = (rPointIds) => {
+    if (!Array.isArray(rPointIds) || rPoints.value.length === 0) {
         return '-';
     }
-    const stopMap = stops.value.reduce((acc, stop) => {
-        acc[stop.id] = stop.name;
+    const rPointMap = rPoints.value.reduce((acc, rPoint) => {
+        acc[rPoint.id] = rPoint.name;
         return acc;
     }, {});
-    return stopIds.map(stopId => stopMap[stopId] || 'Unknown Stop').join(' → ') || '→';
+    return rPointIds.map(rPointId => rPointMap[rPointId] || 'Unknown Route Point').join(' → ') || '→';
 };
 const getAllTimes = () => {
     const allTimes = new Set();
@@ -143,6 +143,18 @@ const saveSlot = async () => {
         const { days: selectedDays, time, assignments, isEditing, originalTime } = currentSlot.value;
         const routeId = route.params.id;
         const type = activeTab.value;
+
+        // Get current route details
+        const routeRef = doc(routeCollection, routeId);
+        const routeSnap = await getDoc(routeRef);
+        const currentRouteRPoints = routeSnap.exists() ? routeSnap.data().rPoints : [];
+        const rPointsArray = currentRouteRPoints.map(rPointId => ({
+            rPointId,
+            expDepTime: 0,
+            expArrTime: 0,
+            status: 'scheduled'
+        }));
+
         const validAssignments = assignments
             .filter(a => a.driver && a.bus);
         if (isEditing) {
@@ -169,7 +181,8 @@ const saveSlot = async () => {
                             updateDoc(existingDocs.get(assignment.id), {
                                 time: time,
                                 driverId: assignment.driver,
-                                busId: assignment.bus
+                                busId: assignment.bus,
+                                rPoints: rPointsArray // new field
                             }));
                         existingDocs.delete(assignment.id);
                     }
@@ -184,7 +197,8 @@ const saveSlot = async () => {
                             driverId: assignment.driver,
                             busId: assignment.bus,
                             status: 'scheduled',
-                            created: new Date()
+                            created: new Date(),
+                            rPoints: rPointsArray // new field
                         })
                     );
                 }
@@ -206,10 +220,11 @@ const saveSlot = async () => {
                             type,
                             routeId,
                             time,
-                            status: 'scheduled',
                             driverId: assignment.driver,
                             busId: assignment.bus,
-                            created: new Date()
+                            status: 'scheduled',
+                            created: new Date(),
+                            rPoints: rPointsArray // new field
                         })
                     );
                 }
@@ -375,7 +390,7 @@ watch(() => currentSlot.value.assignments, () => {
         <div class="card">
             <div class="card-header pb-0">
                 <h4>Schedule for {{ currentRoute.name }}</h4>
-                <p class="text-sm mb-0">Stops: {{ getStopNames(currentRoute.stops) }}</p>
+                <p class="text-sm mb-0">Route Points: {{ getRPointNames(currentRoute.rPoints) }}</p>
             </div>
 
             <!-- Tab Buttons -->

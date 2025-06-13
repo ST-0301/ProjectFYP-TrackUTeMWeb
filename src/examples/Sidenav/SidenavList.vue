@@ -53,7 +53,7 @@ const getRoute = () => {
       </li>
 
       <li class="nav-item">
-        <sidenav-item to="/stops" :class="getRoute() === 'stops' ? 'active' : ''" navText="Stops">
+        <sidenav-item to="/locations" :class="getRoute() === 'routePoints' ? 'active' : ''" navText="Locations">
           <template v-slot:icon>
             <i class="fas fa-map-marker-alt text-success text-sm opacity-10"></i>
           </template>

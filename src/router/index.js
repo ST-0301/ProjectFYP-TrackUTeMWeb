@@ -4,7 +4,7 @@ import Tables from "../views/Tables.vue";
 import BusLocation from '../views/BusLocation.vue';
 import Drivers from "../views/Drivers.vue";
 import Buses from "../views/Buses.vue";
-import Stops from "../views/Stops.vue";
+import RoutePoints from "../views/RoutePoints.vue";
 import Routes from "../views/Routes.vue";
 import Schedule from "../views/components/Schedule.vue";
 
@@ -44,9 +44,9 @@ const routes = [
     component: Buses,
   },
   {
-    path: "/stops",
-    name: "stops",
-    component: Stops,
+    path: "/locations",
+    name: "Locations",
+    component: RoutePoints,
   },
     {
     path: "/routes",

@@ -32,8 +32,8 @@ const storage = getStorage(app);
 // Create a reference to the driver collection
 const driverCollection = collection(db, "drivers");
 const busCollection = collection(db, "buses");
-const stopCollection = collection(db, "stops");
+const rPointCollection = collection(db, "routePoints");
 const routeCollection = collection(db, "routes");
 const scheduleCollection = collection(db, 'schedules');
 
-export { db, driverCollection, busCollection, stopCollection, routeCollection, scheduleCollection, database, ref, auth, storage };
+export { db, driverCollection, busCollection, rPointCollection, routeCollection, scheduleCollection, database, ref, auth, storage };
