@@ -33,19 +33,6 @@ const currentMarkers = ref([]);
 const clickListener = ref(null);
 
 
-// Lifecycle hooks
-onMounted(initializeMap);
-onUnmounted(() => {
-    if (clickListener.value && mapInstance.value) {
-        google.maps.event.removeListener(clickListener.value);
-    }
-    clearMarkers();
-    if (mapInstance.value) {
-        mapInstance.value = null;
-    }
-});
-
-
 // Helper function
 const createMarkerElement = (config) => {
     const element = document.createElement('div');
@@ -146,20 +133,31 @@ const setupClickListener = () => {
 };
 
 
+// Lifecycle hooks
+onMounted(initializeMap);
+onUnmounted(() => {
+    if (clickListener.value && mapInstance.value) {
+        google.maps.event.removeListener(clickListener.value);
+    }
+    clearMarkers();
+    if (mapInstance.value) {
+        mapInstance.value = null;
+    }
+});
+
+
 // Watchers
 watch(() => props.markers, () => {
         if (mapInstance.value) {
             updateMarkers();
         }
-    },
-    { deep: true }
+    }, { deep: true }
 );
 watch(() => props.center, (newCenter) => {
         if (mapInstance.value && newCenter && typeof newCenter.lat === 'number' && typeof newCenter.lng === 'number') {
             mapInstance.value.panTo(newCenter);
         }
-    },
-    { immediate: true }
+    }, { immediate: true }
 );
 watch(() => props.enableClickToAdd, (enabled) => {
         if (!mapInstance.value) return;
@@ -168,8 +166,7 @@ watch(() => props.enableClickToAdd, (enabled) => {
             clickListener.value = null;
         }
         if (enabled) setupClickListener();
-    },
-    { immediate: true }
+    }, { immediate: true }
 );
 </script>
 
