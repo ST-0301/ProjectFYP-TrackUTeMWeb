@@ -9,7 +9,7 @@ import ArgonInput from "@/components/ArgonInput.vue";
 
 // Reactive state
 const routes = ref([]);
-const rPoints = ref([]);
+const rpoints = ref([]);
 const showAddRouteModal = ref(false);
 const showDeleteModal = ref(false);
 const editingRoute = ref(false);
@@ -21,10 +21,19 @@ const pendingName = ref('');
 const editingPinpointIndex = ref(null);
 const routeToDelete = ref(null);
 const schedulesUsingRoute = ref([]);
-const errors = ref({ name: '', rPoints: '', generaL: '' });
+const errors = ref({ name: '', rpoints: '', generaL: '' });
 const DEFAULT_CENTER = { lat: 2.3114, lng: 102.3203 };
 const mapCenter = ref({ ...DEFAULT_CENTER });
+const busStops = computed(() => {
+    // Option 1: If all rpoints are bus stops (no type field needed)
+    // return rpoints.value;
 
+    // Option 2: If you have a type field, make sure it matches your data
+    return rpoints.value.filter(rp => rp.type === 'bus_stop'); // note: underscore, not 'busstop'
+
+    // Option 3: If you want to be more flexible and include items without a type
+    // return rpoints.value.filter(rp => !rp.type || rp.type === 'bus_stop' || rp.type === 'busstop');
+});
 
 // Lifecycle hooks
 onMounted(() => {
@@ -35,11 +44,22 @@ onMounted(() => {
         }));
     });
     const rPointUnsub = onSnapshot(rPointCollection, (snapshot) => {
-        rPoints.value = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
+        rpoints.value = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                ...data,
+                // Add proper coordinate formatting
+                coordinates: {
+                    latitude: data.coordinates?.latitude || data.coordinates?.lat,
+                    longitude: data.coordinates?.longitude || data.coordinates?.lng
+                }
+            };
+        });
+        console.log('Loaded rpoints:', rpoints.value);
     });
+    console.log('Loaded rpoints:', rpoints.value);
+    console.log('First rpoint structure:', rpoints.value[0]);
     return () => { routesUnsub(); rPointUnsub(); }
 });
 
@@ -47,10 +67,10 @@ onMounted(() => {
 // Computed Properties
 const computedEventMarkers = computed(() => {
     if (editingPinpointIndex.value !== null) {
-        const pinpoint = currentRoute.rPoints[editingPinpointIndex.value];
+        const pinpoint = currentRoute.rpoints[editingPinpointIndex.value];
         return [pinpoint];
     }
-    return currentRoute.rPoints.filter(s => s.type === 'event');
+    return currentRoute.rpoints.filter(s => s.type === 'event');
 });
 
 
@@ -59,13 +79,13 @@ function createDefaultRoute() {
     return {
         routeId: "",
         name: "",
-        rPoints: [],
+        rpoints: [],
         created: null
     };
 }
 const getRPointName = (rPointData) => {
     if (rPointData.type === 'regular') {
-        const rPoint = rPoints.value.find(s => s.id === rPointData.id);
+        const rPoint = rpoints.value.find(s => s.id === rPointData.id);
         return rPoint ? rPoint.name : 'Unknown Bus Stops';
     } else if (rPointData.type === 'event') {
         return rPointData.name || 'Unnamed Event Location';
@@ -84,15 +104,15 @@ const getPreviewRPointNames = rPointList => {
 
 // Validation function
 async function validateRoute() {
-    errors.value = { name: '', rPoints: '', generaL: '' };
+    errors.value = { name: '', rpoints: '', generaL: '' };
     let isValid = true;
 
     if (!currentRoute.name.trim()) {
         errors.value.name = 'Route name is required';
         isValid = false;
     }
-    if (!currentRoute.rPoints || currentRoute.rPoints.length < 2) {
-        errors.value.rPoints = 'At least 2 locations is required';
+    if (!currentRoute.rpoints || currentRoute.rpoints.length < 2) {
+        errors.value.rpoints = 'At least 2 locations is required';
         isValid = false;
     }
     const nameQuery = query(routeCollection, where("name", "==", currentRoute.name));
@@ -123,7 +143,7 @@ async function saveRoute() {
 
         let originalEventRPoints = [];
         if (editingRoute.value) {
-            const eventRPointIds = (currentRoute.rPoints || [])
+            const eventRPointIds = (currentRoute.rpoints || [])
                 .filter(rp => rp.type === 'event' && rp.id)
                 .map(rp => rp.id);
             if (eventRPointIds.length) {
@@ -136,7 +156,7 @@ async function saveRoute() {
             }
         }
 
-        for (const rPointData of currentRoute.rPoints) {
+        for (const rPointData of currentRoute.rpoints) {
             if (rPointData.type === 'regular') {
                 routeRPoints.push(rPointData.id);
             } else if (rPointData.type === 'event') {
@@ -163,7 +183,7 @@ async function saveRoute() {
                         coordinates: geoCoordinates,
                         created: new Date().toISOString()
                     };
-                    batch.set(newRPointRef, { ...newRPointData, rPointId: newRPointRef.id });
+                    batch.set(newRPointRef, { ...newRPointData, rpointId: newRPointRef.id });
                     routeRPoints.push(newRPointRef.id);
                 }
             }
@@ -180,7 +200,7 @@ async function saveRoute() {
         const routeData = {
             name: currentRoute.name,
             type: routeType,
-            rPoints: routeRPoints,
+            rpoints: routeRPoints,
             created: currentRoute.created || new Date().toISOString()
         };
         if (editingRoute.value) {
@@ -228,34 +248,37 @@ const editRoute = (route) => {
     editingRoute.value = true;
     rPointSelectionMode.value = route.type;
 
+    // Add safe access for rpoints
+    const routeRPoints = route.rpoints || [];
+
     if (route.type === 'regular') {
-        currentRoute.rPoints = route.rPoints.map(rPointId => ({
+        currentRoute.rpoints = routeRPoints.map(rpointId => ({
             type: 'regular',
-            id: rPointId
+            id: rpointId
         }));
 
-        if (route.rPoints.length) {
-            const firstRPoint = rPoints.value.find(s => s.id === route.rPoints[0]);
+        if (routeRPoints.length) {
+            const firstRPoint = rpoints.value.find(s => s.id === routeRPoints[0]);
             if (firstRPoint) mapCenter.value = {
                 lat: firstRPoint.coordinates.latitude,
                 lng: firstRPoint.coordinates.longitude
             };
         }
     } else {
-        currentRoute.rPoints = route.rPoints.map(rPointId => {
-            const rPoint = rPoints.value.find(s => s.id === rPointId);
+        currentRoute.rpoints = routeRPoints.map(rpointId => {
+            const rPoint = rpoints.value.find(s => s.id === rpointId);
             return rPoint ? {
                 type: 'event',
-                id: rPointId,
+                id: rpointId,
                 name: rPoint.name,
                 coordinates: rPoint.coordinates
             } : null;
         }).filter(Boolean);
 
-        if (currentRoute.rPoints.length) {
+        if (currentRoute.rpoints.length) {
             mapCenter.value = {
-                lat: currentRoute.rPoints[0].coordinates.latitude,
-                lng: currentRoute.rPoints[0].coordinates.longitude
+                lat: currentRoute.rpoints[0].coordinates.latitude,
+                lng: currentRoute.rpoints[0].coordinates.longitude
             };
         }
     }
@@ -272,13 +295,18 @@ const closeModal = () => {
     showAddRouteModal.value = false;
     editingRoute.value = false;
     Object.assign(currentRoute, createDefaultRoute());
-    errors.value = { name: '', rPoints: '', generaL: '' };
+    errors.value = { name: '', rpoints: '', generaL: '' };
 };
 function handleMarkerClick(rPointInfo) {
+    console.log('Marker clicked:', rPointInfo);
+    
     if (rPointSelectionMode.value === 'regular' && rPointInfo.id) {
-        const rPointId = rPointInfo.id;
-        if (!currentRoute.rPoints.some(s => s.type === 'regular' && s.id === rPointId)) {
-            currentRoute.rPoints.push({ type: 'regular', id: rPointId });
+        const rpointId = rPointInfo.id;
+        if (!currentRoute.rpoints.some(s => s.type === 'regular' && s.id === rpointId)) {
+            currentRoute.rpoints.push({ type: 'regular', id: rpointId });
+            console.log('Added bus stop:', rpointId);
+        } else {
+            console.log('Bus stop already added:', rpointId); // Debug log
         }
     } else if (rPointSelectionMode.value === 'event' && rPointInfo.position) {
         if (editingPinpointIndex.value !== null) {
@@ -306,7 +334,7 @@ function handlePinpointDrag({ position }) {
     }
 
     if (editingPinpointIndex.value !== null) {
-        const rPoint = currentRoute.rPoints[editingPinpointIndex.value];
+        const rPoint = currentRoute.rpoints[editingPinpointIndex.value];
         if (rPoint) {
             rPoint.coordinates = { latitude: lat, longitude: lng };
         }
@@ -320,13 +348,13 @@ async function confirmPinpoint() {
         coordinates: { ...pendingPinpoint.value }
     };
     if (editingPinpointIndex.value !== null) {
-        const original = currentRoute.rPoints[editingPinpointIndex.value];
+        const original = currentRoute.rpoints[editingPinpointIndex.value];
         if (original && original.id) {
             newPinpoint.id = original.id;
         }
-        currentRoute.rPoints[editingPinpointIndex.value] = newPinpoint;
+        currentRoute.rpoints[editingPinpointIndex.value] = newPinpoint;
     } else {
-        currentRoute.rPoints.push(newPinpoint);
+        currentRoute.rpoints.push(newPinpoint);
     }
     pendingPinpoint.value = null;
     pendingName.value = '';
@@ -334,7 +362,7 @@ async function confirmPinpoint() {
     pendingRPointId.value = null;
 }
 async function startEditPinpoint(i) {
-    const rPoint = currentRoute.rPoints[i];
+    const rPoint = currentRoute.rpoints[i];
     if (!rPoint || !rPoint.id) return;
 
     const rPointDocRef = doc(rPointCollection, rPoint.id);
@@ -358,14 +386,14 @@ async function startEditPinpoint(i) {
     }
 }
 const removeRPoint = (index) => {
-    currentRoute.rPoints.splice(index, 1);
+    currentRoute.rpoints.splice(index, 1);
 };
 function handleModeChange() {
-    currentRoute.rPoints = [];
+    currentRoute.rpoints = [];
     pendingPinpoint.value = null;
     pendingName.value = '';
     editingPinpointIndex.value = null;
-    errors.value.rPoints = '';
+    errors.value.rpoints = '';
 }
 
 
@@ -393,9 +421,9 @@ const formatDateTime = (dateInput) => {
 
 
 // Watchers
-watch(() => currentRoute.rPoints, () => {
-    if (currentRoute.rPoints && currentRoute.rPoints.length > 0) {
-        errors.value.rPoints = '';
+watch(() => currentRoute.rpoints, () => {
+    if (currentRoute.rpoints && currentRoute.rpoints.length > 0) {
+        errors.value.rpoints = '';
     }
 }, { deep: true });
 watch(editingRoute, (newValue) => {
@@ -454,7 +482,7 @@ watch(editingRoute, (newValue) => {
                                         </td>
                                         <td>
                                             <p class="text-sm font-weight-bold mb-0">
-                                                {{getPreviewRPointNames((route.rPoints || []).map(id => ({
+                                                {{getPreviewRPointNames((route.rpoints || []).map(id => ({
                                                 type: 'regular', id: id
                                                 }))) }}
                                             </p>
@@ -557,7 +585,7 @@ watch(editingRoute, (newValue) => {
                                                 </div>
 
                                                 <ul class="list-group">
-                                                    <li v-for="(rPointData, index) in currentRoute.rPoints" :key="index"
+                                                    <li v-for="(rPointData, index) in currentRoute.rpoints" :key="index"
                                                         class="list-group-item d-flex justify-content-between align-items-center">
                                                         <div class="d-flex align-items-center">
                                                             <span class="badge bg-gradient-success me-2">{{ index + 1
@@ -580,8 +608,8 @@ watch(editingRoute, (newValue) => {
                                                         </div>
                                                     </li>
                                                 </ul>
-                                                <div v-if="errors.rPoints" class="text-danger text-sm mb-2">{{
-                                                    errors.rPoints }}</div>
+                                                <div v-if="errors.rpoints" class="text-danger text-sm mb-2">{{
+                                                    errors.rpoints }}</div>
                                             </div>
                                         </div>
 
@@ -595,9 +623,9 @@ watch(editingRoute, (newValue) => {
                                                     <span v-else-if="rPointSelectionMode === 'event'">Click anywhere on
                                                         the map to drop a new event pick-up/drop-off point.</span>
                                                 </div>
-                                                <GoogleMapPicker v-if="showAddRouteModal"
-                                                    :existing-rPoints="rPointSelectionMode === 'regular' ? rPoints : []"
-                                                    :event-rPoints="computedEventMarkers" :center="mapCenter"
+                                                <GoogleMapPicker v-if="showAddRouteModal" :center="mapCenter"
+                                                    :existingRPoints="rPointSelectionMode === 'regular' ? busStops : []"
+                                                    :event-rpoints="computedEventMarkers"
                                                     :enable-click-to-add="rPointSelectionMode === 'event'"
                                                     :enable-draggable-markers="rPointSelectionMode === 'event'"
                                                     :coordinates="pendingPinpoint ? { lat: pendingPinpoint.latitude, lng: pendingPinpoint.longitude } : { lat: null, lng: null }"
@@ -606,8 +634,8 @@ watch(editingRoute, (newValue) => {
                                                     @marker-dragged="handlePinpointDrag"
                                                     class="mt-3 rpoint-page-map flex-grow-1" />
                                                 <!-- <GoogleMapPicker v-if="showAddRouteModal" :center="mapCenter"
-                                                    :existing-rPoints="rPointSelectionMode === 'regular' ? rPoints : []"
-                                                    :event-rPoints="computedEventMarkers"
+                                                    :existing-rpoints="rPointSelectionMode === 'regular' ? rpoints : []"
+                                                    :event-rpoints="computedEventMarkers"
                                                     :enable-click-to-add="rPointSelectionMode === 'event' && editingPinpointIndex === null"
                                                     :enable-draggable-markers="rPointSelectionMode === 'event'"
                                                     :coordinates="rPointSelectionMode === 'event' && pendingPinpoint ? { lat: pendingPinpoint.latitude, lng: pendingPinpoint.longitude } : { lat: null, lng: null }"

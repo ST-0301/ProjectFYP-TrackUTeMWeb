@@ -12,15 +12,16 @@ import ArgonInput from "@/components/ArgonInput.vue";
 const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const route = useRoute();
 const currentRoute = ref({});
-const rPoints = ref([]);
+const rpoints = ref([]);
 const schedule = ref({});
 const drivers = ref([]);
 const buses = ref([]);
 const activeTab = ref('incampus');
 const showSlotModal = ref(false);
 const showDeleteModal = ref(false);
-const currentSlot = ref({ days: [], index: -1, time: '', assignments: [{ driver: '', bus: '' }], originalDays: [] });
+const currentSlot = ref({ days: [], index: -1, time: '', assignments: [{ driver: '', bus: '' }], originalDays: [], rPointsTimes: [] });
 const slotErrors = ref({ time: '', days: '', general: '' });
+const currentStep = ref(1);
 
 
 // Lifecycle hooks
@@ -29,31 +30,38 @@ onMounted(async () => {
     const routeRef = doc(routeCollection, routeId);
     const routeSnap = await getDoc(routeRef);
     if (routeSnap.exists()) currentRoute.value = routeSnap.data();
-    const q = query(scheduleCollection, where('routeId', '==', routeId));
-    const querySnapshot = await getDocs(q);
-    days.forEach(day => {
-        schedule.value[day.toLowerCase()] = { incampus: [], outcampus: [] };
-    });
-    querySnapshot.forEach((doc) => {
-        const sched = doc.data();
-        const day = sched.day.toLowerCase();
-        const type = sched.type.toLowerCase();
-        if (schedule.value[day] && schedule.value[day][type]) {
-            schedule.value[day][type].push({
-                id: doc.id,
-                time: sched.time,
-                assignments: sched.assignments,
-                status: sched.status,
-                busId: sched.busId,
-                driverId: sched.driverId
+
+    onSnapshot(
+        query(scheduleCollection, where('routeId', '==', routeId)),
+        (querySnapshot) => {
+            const newSchedule = {};
+            days.forEach(day => {
+                newSchedule[day.toLowerCase()] = { incampus: [], outcampus: [] };
             });
+            querySnapshot.forEach((doc) => {
+                const sched = doc.data();
+                const day = sched.day.toLowerCase();
+                const type = sched.type.toLowerCase();
+                if (newSchedule[day] && newSchedule[day][type]) {
+                    newSchedule[day][type].push({
+                        id: doc.id,
+                        time: sched.time,
+                        assignments: sched.assignments,
+                        status: sched.status,
+                        busId: sched.busId,
+                        driverId: sched.driverId,
+                        rpoints: sched.rpoints || []
+                    });
+                }
+            });
+            schedule.value = newSchedule;
+        },
+        (error) => {
+            console.error("Error fetching schedules:", error);
         }
-    });
-    onSnapshot(rPointCollection, snapshot => rPoints.value = snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    const [driversSnap, busesSnap] = await Promise.all([
-        getDocs(driverCollection),
-        getDocs(busCollection)
-    ]);
+    );
+    onSnapshot(rPointCollection, snapshot => rpoints.value = snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    const [driversSnap, busesSnap] = await Promise.all([getDocs(driverCollection), getDocs(busCollection)]);
     drivers.value = driversSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     buses.value = busesSnap.docs.map(b => ({ id: b.id, ...b.data() }));
 });
@@ -61,14 +69,14 @@ onMounted(async () => {
 
 // Helper functions
 const getRPointNames = (rPointIds) => {
-    if (!Array.isArray(rPointIds) || rPoints.value.length === 0) {
+    if (!Array.isArray(rPointIds) || rpoints.value.length === 0) {
         return '-';
     }
-    const rPointMap = rPoints.value.reduce((acc, rPoint) => {
+    const rPointMap = rpoints.value.reduce((acc, rPoint) => {
         acc[rPoint.id] = rPoint.name;
         return acc;
     }, {});
-    return rPointIds.map(rPointId => rPointMap[rPointId] || 'Unknown Route Point').join(' → ') || '→';
+    return rPointIds.map(rpointId => rPointMap[rpointId] || 'Unknown Location').join(' → ') || '→';
 };
 const getAllTimes = () => {
     const allTimes = new Set();
@@ -89,10 +97,10 @@ const getSlotIndex = (day, time) => {
 const getCounts = (day, time) => {
     const type = activeTab.value;
     const entries = schedule.value[day]?.[type]?.filter(s => s.time === time) || [];
-    return {
-        drivers: entries.length,
-        buses: entries.length
-    };
+    const driverCount = entries.filter(entry => entry.driverId !== null).length;
+    const busCount = entries.filter(entry => entry.busId !== null).length;
+
+    return { drivers: driverCount, buses: busCount };
 };
 const checkExistingTimes = () => {
     const conflicts = [];
@@ -109,14 +117,14 @@ const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
 
 
 // Validation function
-const validateSlot = () => {
-    slotErrors.value = { time: '', days: '', general: '' };
+const validateStep1 = () => {
+    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '' };
     let valid = true;
     if (!currentSlot.value.time) {
         slotErrors.value.time = 'Time is required';
         valid = false;
     }
-    if (currentSlot.value.index === -1) {
+    if (currentSlot.value.index === -1) { 
         if (currentSlot.value.days.length === 0) {
             slotErrors.value.days = 'Select at least one day';
             valid = false;
@@ -128,8 +136,38 @@ const validateSlot = () => {
             }
         }
     }
+    return valid;
+};
+const validateStep2 = () => {
+    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '' };
+    let valid = true;
+    currentSlot.value.rPointsTimes.forEach(rp => {
+        if (!rp.expDepTime || !rp.expArrTime) {
+            slotErrors.value.rPointsTimes = 'Please provide both Expected Departure and Expected Arrival times for all locations.';
+            valid = false;
+        }
+    });
+    return valid;
+};
+const validateStep3 = () => {
+    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '' };
+    let valid = true;
     if (currentSlot.value.assignments.some(a => (a.driver && !a.bus) || (!a.driver && a.bus))) {
         slotErrors.value.general = 'Select both driver and bus for each assignment or leave both empty';
+        valid = false;
+    }
+
+    const duplicates = new Set();
+    const allDrivers = currentSlot.value.assignments.map(a => a.driver).filter(Boolean);
+    const allBuses = currentSlot.value.assignments.map(a => a.bus).filter(Boolean);
+    if (new Set(allDrivers).size !== allDrivers.length) {
+        duplicates.add('drivers');
+    }
+    if (new Set(allBuses).size !== allBuses.length) {
+        duplicates.add('buses');
+    }
+    if (duplicates.size > 0) {
+        slotErrors.value.general = `Duplicate ${[...duplicates].join(' and ')} detected`;
         valid = false;
     }
     return valid;
@@ -139,28 +177,23 @@ const validateSlot = () => {
 // CRUD operations
 const saveSlot = async () => {
     try {
-        if (!validateSlot()) return;
+        validateStep3(); 
+
         const { days: selectedDays, time, assignments, isEditing, originalTime } = currentSlot.value;
         const routeId = route.params.id;
         const type = activeTab.value;
 
-        // Get current route details
-        const routeRef = doc(routeCollection, routeId);
-        const routeSnap = await getDoc(routeRef);
-        const currentRouteRPoints = routeSnap.exists() ? routeSnap.data().rPoints : [];
-        const rPointsArray = currentRouteRPoints.map(rPointId => ({
-            rPointId,
-            expDepTime: 0,
-            expArrTime: 0,
+        const rPointsToSave = currentSlot.value.rPointsTimes.map(rp => ({
+            rpointId: rp.rpointId,
+            expDepTime: rp.expDepTime,
+            expArrTime: rp.expArrTime,
             status: 'scheduled'
         }));
+        const validAssignments = assignments.filter(a => a.driver && a.bus);
 
-        const validAssignments = assignments
-            .filter(a => a.driver && a.bus);
         if (isEditing) {
             const originalDay = currentSlot.value.days[0].toLowerCase();
-            const q = query(
-                scheduleCollection,
+            const q = query(scheduleCollection,
                 where('routeId', '==', routeId),
                 where('type', '==', type),
                 where('day', '==', originalDay),
@@ -171,25 +204,41 @@ const saveSlot = async () => {
             querySnapshot.forEach(doc => {
                 existingDocs.set(doc.id, doc.ref);
             });
+
             const updatePromises = [];
             const deletePromises = [];
-            assignments.forEach(assignment => {
-                if (assignment.id) {
-                    if (existingDocs.has(assignment.id)) {
-                        // Update existing document
-                        updatePromises.push(
-                            updateDoc(existingDocs.get(assignment.id), {
-                                time: time,
-                                driverId: assignment.driver,
-                                busId: assignment.bus,
-                                rPoints: rPointsArray // new field
-                            }));
-                        existingDocs.delete(assignment.id);
-                    }
-                } else {
-                    // Create new document
-                    updatePromises.push(
-                        addDoc(scheduleCollection, {
+
+            if (validAssignments.length === 0) {
+                existingDocs.forEach(ref => {
+                    deletePromises.push(deleteDoc(ref));
+                });
+                const newDocRef = await addDoc(scheduleCollection, {
+                    day: originalDay,
+                    type,
+                    routeId,
+                    time,
+                    driverId: null,
+                    busId: null,
+                    status: 'scheduled',
+                    created: new Date(),
+                    rpoints: rPointsToSave,
+                });
+                updatePromises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
+            } else {
+                for (const assignment of validAssignments) {
+                    if (assignment.id) {
+                        if (existingDocs.has(assignment.id)) {
+                            updatePromises.push(
+                                updateDoc(existingDocs.get(assignment.id), {
+                                    time: time,
+                                    driverId: assignment.driver,
+                                    busId: assignment.bus,
+                                    rpoints: rPointsToSave,
+                                }));
+                            existingDocs.delete(assignment.id);
+                        }
+                    } else {
+                        const newDocRef = await addDoc(scheduleCollection, {
                             day: originalDay,
                             type,
                             routeId,
@@ -198,24 +247,37 @@ const saveSlot = async () => {
                             busId: assignment.bus,
                             status: 'scheduled',
                             created: new Date(),
-                            rPoints: rPointsArray // new field
-                        })
-                    );
+                            rpoints: rPointsToSave,
+                        });
+                        updatePromises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
+                    }
                 }
-            });
-            existingDocs.forEach(ref => {
-                deletePromises.push(deleteDoc(ref));
-            });
+                existingDocs.forEach(ref => {
+                    deletePromises.push(deleteDoc(ref));
+                });
+            }
 
             await Promise.all([...updatePromises, ...deletePromises]);
         } else {
-            // Create new documents for each selected day and each assignment
             const promises = [];
             for (const day of selectedDays) {
                 const lowerDay = day.toLowerCase();
-                for (const assignment of validAssignments) {
-                    promises.push(
-                        addDoc(scheduleCollection, {
+                if (validAssignments.length === 0) {
+                    const newDocRef = await addDoc(scheduleCollection, {
+                        day: lowerDay,
+                        type,
+                        routeId,
+                        time,
+                        driverId: null,
+                        busId: null,
+                        status: 'scheduled',
+                        created: new Date(),
+                        rpoints: rPointsToSave,
+                    });
+                    promises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
+                } else {
+                    for (const assignment of validAssignments) {
+                        const newDocRef = await addDoc(scheduleCollection, {
                             day: lowerDay,
                             type,
                             routeId,
@@ -224,17 +286,19 @@ const saveSlot = async () => {
                             busId: assignment.bus,
                             status: 'scheduled',
                             created: new Date(),
-                            rPoints: rPointsArray // new field
-                        })
-                    );
+                            rpoints: rPointsToSave,
+                        });
+                        promises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
+                    }
                 }
             }
             await Promise.all(promises);
         }
+
         const refreshQ = query(scheduleCollection, where('routeId', '==', routeId));
         const refreshSnapshot = await getDocs(refreshQ);
         days.forEach(day => {
-            schedule.value[day] = { incampus: [], outcampus: [] };
+            schedule.value[day.toLowerCase()] = { incampus: [], outcampus: [] };
         });
         refreshSnapshot.forEach(doc => {
             const sched = doc.data();
@@ -255,9 +319,7 @@ const deleteSlot = async () => {
         const day = currentSlot.value.days[0].toLowerCase();
         const time = currentSlot.value.originalTime;
 
-        // Query all matching documents
-        const q = query(
-            scheduleCollection,
+        const q = query(scheduleCollection,
             where('routeId', '==', routeId),
             where('type', '==', type),
             where('day', '==', day),
@@ -282,11 +344,16 @@ const deleteSlot = async () => {
 
 // UI handlers
 const openModal = async (initialDay, time = '') => {
+    if (!currentRoute.value.rpoints || rpoints.value.length === 0) {
+        console.warn("Locations not loaded yet.");
+        return;
+    }
+
     const lowerDay = initialDay.toLowerCase();
     const routeId = route.params.id;
     const type = activeTab.value;
+
     if (time) {
-        // Query all documents for this time slot
         const q = query(
             scheduleCollection,
             where('routeId', '==', routeId),
@@ -295,20 +362,75 @@ const openModal = async (initialDay, time = '') => {
             where('time', '==', time)
         );
         const querySnapshot = await getDocs(q);
+
+        let assignmentsData = [];
+        let rPointsTimesData = [];
+
+        if (!querySnapshot.empty) {
+            const firstDocData = querySnapshot.docs[0].data();
+            assignmentsData = querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                driver: doc.data().driverId,
+                bus: doc.data().busId
+            }));
+
+            if (firstDocData.rpoints && firstDocData.rpoints.length > 0) {
+                rPointsTimesData = firstDocData.rpoints.map(rp => {
+                    const rPoint = rpoints.value.find(globalRp => globalRp.id === rp.rpointId);
+                    return {
+                        rpointId: rp.rpointId,
+                        name: rPoint ? rPoint.name : 'Unknown',
+                        expDepTime: rp.expDepTime || '',
+                        expArrTime: rp.expArrTime || ''
+                    };
+                });
+            } else {
+                rPointsTimesData = currentRoute.value.rpoints.map(rpointId => {
+                    const rPoint = rpoints.value.find(rp => rp.id === rpointId);
+                    return {
+                        rpointId,
+                        name: rPoint ? rPoint.name : 'Unknown',
+                        expDepTime: '',
+                        expArrTime: ''
+                    };
+                });
+            }
+        } else {
+            assignmentsData = [{ driver: '', bus: '' }];
+            rPointsTimesData = currentRoute.value.rpoints.map(rpointId => {
+                const rPoint = rpoints.value.find(rp => rp.id === rpointId);
+                return {
+                    rpointId,
+                    name: rPoint ? rPoint.name : 'Unknown',
+                    expDepTime: '',
+                    expArrTime: ''
+                };
+            });
+        }
+
         currentSlot.value = {
             days: [initialDay],
             originalDays: [initialDay],
             originalTime: time,
             time: time,
             initialDay: initialDay,
-            assignments: querySnapshot.docs.map(doc => ({
-                id: doc.id,
-                driver: doc.data().driverId,
-                bus: doc.data().busId
-            })),
-            isEditing: true
+            assignments: assignmentsData,
+            isEditing: true,
+            rPointsTimes: rPointsTimesData
         };
+
     } else {
+        const routeRPointIds = currentRoute.value.rpoints || [];
+        const initializedRPointsTimes = routeRPointIds.map(rpointId => {
+            const rPoint = rpoints.value.find(rp => rp.id === rpointId);
+            return {
+                rpointId,
+                name: rPoint ? rPoint.name : 'Unknown',
+                expDepTime: '',
+                expArrTime: ''
+            };
+        });
+
         currentSlot.value = {
             days: [initialDay],
             originalDays: [],
@@ -316,9 +438,11 @@ const openModal = async (initialDay, time = '') => {
             time: '',
             assignments: [{ driver: '', bus: '' }],
             initialDay,
-            isEditing: false
+            isEditing: false,
+            rPointsTimes: initializedRPointsTimes
         };
     }
+    currentStep.value = 1;
     showSlotModal.value = true;
 };
 const closeModal = () => {
@@ -329,9 +453,11 @@ const closeModal = () => {
         index: -1,
         time: '',
         assignments: [{ driver: '', bus: '' }],
-        initialDay: null
+        initialDay: null,
+        rPointsTimes: [] 
     };
-    slotErrors.value = { time: '', days: '', general: '' };
+    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '' }; 
+    currentStep.value = 1;
 };
 const addAssignment = () =>
     currentSlot.value.assignments.push({ driver: '', bus: '' });
@@ -342,6 +468,17 @@ const removeAssignment = (index) => {
     if (currentSlot.value.assignments.length > 1) {
         currentSlot.value.assignments.splice(index, 1);
     }
+};
+const nextStep = () => {
+    if (currentStep.value === 1) {
+        if (!validateStep1()) return;
+    } else if (currentStep.value === 2) {
+        if (!validateStep2()) return;
+    }
+    currentStep.value++;
+};
+const prevStep = () => {
+    currentStep.value--;
 };
 
 
@@ -366,31 +503,15 @@ const availableBuses = (currentAssignment) => {
 
 // Watchers
 watch(() => currentSlot.value.time, () => slotErrors.value.time = '');
-watch(() => currentSlot.value.assignments, () => {
-    const duplicates = new Set();
-    const allDrivers = currentSlot.value.assignments.map(a => a.driver).filter(Boolean);
-    const allBuses = currentSlot.value.assignments.map(a => a.bus).filter(Boolean);
-    slotErrors.value.general = '';
-    if (new Set(allDrivers).size !== allDrivers.length) {
-        duplicates.add('drivers');
-    }
-    if (new Set(allBuses).size !== allBuses.length) {
-        duplicates.add('buses');
-    }
-    if (duplicates.size > 0) {
-        slotErrors.value.general = `Duplicate ${[...duplicates].join(' and ')} detected`;
-    }
-}, { deep: true });
+watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: true });
 </script>
-
-
 
 <template>
     <div class="container-fluid py-4">
         <div class="card">
             <div class="card-header pb-0">
                 <h4>Schedule for {{ currentRoute.name }}</h4>
-                <p class="text-sm mb-0">Route Points: {{ getRPointNames(currentRoute.rPoints) }}</p>
+                <p class="text-sm mb-0">Locations: {{ getRPointNames(currentRoute.rpoints) }}</p>
             </div>
 
             <!-- Tab Buttons -->
@@ -466,8 +587,8 @@ watch(() => currentSlot.value.assignments, () => {
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title">
-                            {{ currentSlot.index === -1 ? 'Add Time Slot' : 'Edit Time Slot' }}
-                            <span v-if="currentSlot.index !== -1" class="text-muted text-sm">
+                            {{ currentSlot.isEditing ? 'Edit Time Slot' : 'Add Time Slot' }}
+                            <span v-if="currentSlot.isEditing" class="text-muted text-sm">
                                 ({{ capitalize(currentSlot.initialDay) }} - {{ activeTab === 'incampus' ? 'In Campus' :
                                 'Out Campus'
                                 }})
@@ -476,76 +597,122 @@ watch(() => currentSlot.value.assignments, () => {
                         <button type="button" class="btn-close" @click="closeModal"></button>
                     </div>
                     <div class="modal-body">
-                        <div class="mb-3">
-                            <label class="form-label">Time</label>
-                            <argon-input type="time" v-model="currentSlot.time" required />
-                            <div v-if="slotErrors.time" class="text-danger text-sm mt-1">{{ slotErrors.time }}</div>
-                        </div>
+                        <div v-if="currentStep === 1">
+                            <div class="mb-3">
+                                <label class="form-label">Slot Start Time</label>
+                                <argon-input type="time" v-model="currentSlot.time" required />
+                                <div v-if="slotErrors.time" class="text-danger text-sm mt-1">{{ slotErrors.time }}</div>
+                            </div>
 
-                        <div class="mb-3">
-                            <div v-if="currentSlot.index === -1">
-                                <label class="form-label">Day</label>
-                                <div class="d-flex flex-wrap gap-3">
-                                    <div v-for="day in days" :key="day" class="form-check d-flex align-items-center">
-                                        <argon-checkbox :id="`day-${day}`" v-model="currentSlot.days" :value="day" />
-                                        <label :for="`day-${day}`" class="form-check-label ms-2 mb-0">
-                                            {{ capitalize(day) }}
-                                        </label>
+                            <div class="mb-3">
+                                <div v-if="!currentSlot.isEditing">
+                                    <label class="form-label">Day (s)</label>
+                                    <div class="d-flex flex-wrap gap-3">
+                                        <div v-for="day in days" :key="day"
+                                            class="form-check d-flex align-items-center">
+                                            <argon-checkbox :id="`day-${day}`" v-model="currentSlot.days"
+                                                :value="day" />
+                                            <label :for="`day-${day}`" class="form-check-label ms-2 mb-0">
+                                                {{ capitalize(day) }}
+                                            </label>
+                                        </div>
                                     </div>
                                     <div v-if="slotErrors.days" class="text-danger text-sm mt-1">
                                         {{ slotErrors.days }}
                                     </div>
                                 </div>
+                                <div v-if="slotErrors.general" class="text-danger text-sm mt-1">
+                                    {{ slotErrors.general }}
+                                </div>
                             </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label">Assignment</label>
-                            <div v-for="(assignment, idx) in currentSlot.assignments" :key="idx"
-                                class="d-flex mb-3 align-items-center gap-2">
-
-                                <select class="form-select" v-model="assignment.driver"
-                                    @change="updateAssignment(idx, 'driver', $event.target.value)" :class="{
-                                        'is-invalid': (assignment.driver && !assignment.bus) ||
-                                            (!assignment.driver && assignment.bus)
-                                    }">
-                                    <option value="">Select Driver</option>
-                                    <option v-for="d in availableDrivers(assignment)" :key="d.id" :value="d.id"
-                                        :disabled="usedDrivers.has(d.id) && d.id !== assignment.driver">{{ d.name }}
-                                    </option>
-                                </select>
-
-                                <select class="form-select" v-model="assignment.bus"
-                                    @change="updateAssignment(idx, 'bus', $event.target.value)" :class="{
-                                        'is-invalid': (assignment.bus && !assignment.driver) ||
-                                            (!assignment.bus && assignment.driver)
-                                    }">
-                                    <option value="">Select Bus</option>
-                                    <option v-for="b in availableBuses(assignment)" :key="b.id" :value="b.id"
-                                        :disabled="usedBuses.has(b.id) && b.id !== assignment.bus">{{ b.licensePlate }}
-                                    </option>
-                                </select>
-
-                                <argon-button color="danger" @click="removeAssignment(idx)"
-                                    :disabled="currentSlot.assignments.length <= 1">
-                                    <i class="fas fa-trash"></i>
-                                </argon-button>
+                        <div v-if="currentStep === 2">
+                            <div class="mb-3">
+                                <label class="form-label">Location Timings</label>
+                                <div v-if="currentSlot.rPointsTimes && currentSlot.rPointsTimes.length">
+                                    <div v-for="(rPoint, idx) in currentSlot.rPointsTimes" :key="rPoint.rpointId"
+                                        class="card mb-2 p-3">
+                                        <h6 class="mb-2">{{ rPoint.name }}</h6>
+                                        <div class="row gx-2">
+                                            <div class="col-md-6 mb-2">
+                                                <label :for="`expDepTime-${rPoint.rpointId}`"
+                                                    class="form-label text-sm">Expected
+                                                    Departure Time</label>
+                                                <ArgonInput :id="`expDepTime-${rPoint.rpointId}`"
+                                                    v-model="currentSlot.rPointsTimes[idx].expDepTime" type="time"
+                                                    placeholder="Departure Time" />
+                                            </div>
+                                            <div class="col-md-6 mb-2">
+                                                <label :for="`expArrTime-${rPoint.rpointId}`"
+                                                    class="form-label text-sm">Expected
+                                                    Arrival Time</label>
+                                                <ArgonInput :id="`expArrTime-${rPoint.rpointId}`"
+                                                    v-model="currentSlot.rPointsTimes[idx].expArrTime" type="time"
+                                                    placeholder="Arrival Time" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div v-if="slotErrors.rPointsTimes" class="text-danger text-sm mt-1">
+                                        {{ slotErrors.rPointsTimes }}
+                                    </div>
+                                </div>
+                                <p v-else class="text-muted text-sm">No route points defined for this route.</p>
                             </div>
                         </div>
-                        <argon-button color="primary" class="btn-sm" @click="addAssignment">
-                            <i class="fas fa-plus me-1"></i> Add Assignment
-                        </argon-button>
 
-                        <div v-if="slotErrors.general" class="text-danger text-sm text-sm mt-3">
-                            {{ slotErrors.general }}
+                        <div v-if="currentStep === 3">
+                            <div class="mb-3">
+                                <label class="form-label">Assignment</label>
+                                <div v-for="(assignment, idx) in currentSlot.assignments" :key="idx"
+                                    class="d-flex mb-3 align-items-center gap-2">
+
+                                    <select class="form-select" v-model="assignment.driver"
+                                        @change="updateAssignment(idx, 'driver', $event.target.value)" :class="{
+                                            'is-invalid': (assignment.driver && !assignment.bus) ||
+                                                (!assignment.driver && assignment.bus)
+                                        }">
+                                        <option value="">Select Driver</option>
+                                        <option v-for="d in availableDrivers(assignment)" :key="d.id" :value="d.id"
+                                            :disabled="usedDrivers.has(d.id) && d.id !== assignment.driver">{{ d.name }}
+                                        </option>
+                                    </select>
+
+                                    <select class="form-select" v-model="assignment.bus"
+                                        @change="updateAssignment(idx, 'bus', $event.target.value)" :class="{
+                                            'is-invalid': (assignment.bus && !assignment.driver) ||
+                                                (!assignment.bus && assignment.driver)
+                                        }">
+                                        <option value="">Select Bus</option>
+                                        <option v-for="b in availableBuses(assignment)" :key="b.id" :value="b.id"
+                                            :disabled="usedBuses.has(b.id) && b.id !== assignment.bus">{{ b.licensePlate
+                                            }}
+                                        </option>
+                                    </select>
+
+                                    <argon-button color="danger" @click="removeAssignment(idx)"
+                                        :disabled="currentSlot.assignments.length <= 1">
+                                        <i class="fas fa-trash"></i>
+                                    </argon-button>
+                                </div>
+                            </div>
+                            <argon-button color="primary" class="btn-sm" @click="addAssignment">
+                                <i class="fas fa-plus me-1"></i> Add Assignment
+                            </argon-button>
+                            <div v-if="slotErrors.general" class="text-danger text-sm text-sm mt-3">
+                                {{ slotErrors.general }}
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <argon-button color="danger" v-if="currentSlot.isEditing" @click="showDeleteModal = true">
+                        <argon-button color="danger" v-if="currentSlot.isEditing && currentStep === 1"
+                            @click="showDeleteModal = true">
                             Delete Slot
                         </argon-button>
                         <argon-button color="secondary" @click="closeModal">Cancel</argon-button>
-                        <argon-button color="primary" @click="saveSlot">Save</argon-button>
+                        <argon-button color="secondary" @click="prevStep" v-if="currentStep > 1">Back</argon-button>
+                        <argon-button color="primary" @click="nextStep" v-if="currentStep < 3">Next</argon-button>
+                        <argon-button color="primary" @click="saveSlot" v-if="currentStep === 3">Save</argon-button>
                     </div>
                 </div>
             </div>
@@ -574,8 +741,6 @@ watch(() => currentSlot.value.assignments, () => {
     </div>
 </template>
 
-
-
 <style scoped>
 .tabs-container.justify-content-center {
     max-width: 1140px;
@@ -602,7 +767,6 @@ watch(() => currentSlot.value.assignments, () => {
     color: white;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
 }
-
 .table {
     table-layout: fixed;
     border-collapse: collapse !important;

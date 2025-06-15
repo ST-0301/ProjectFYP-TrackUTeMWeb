@@ -8,7 +8,7 @@ import GoogleMapPicker from '@/views/components/GoogleMapPicker.vue';
 
 
 // Reactive state
-const rPoints = ref([]);
+const rpoints = ref([]);
 const routes = ref([]);
 const showAddRPointModal = ref(false);
 const showDeleteModal = ref(false);
@@ -25,7 +25,7 @@ const mapCenter = ref({ ...DEFAULT_CENTER });
 // Lifecycle hooks
 onMounted(() => {
     const rPointUnsub = onSnapshot(rPointCollection, (snapshot) => {
-        rPoints.value = snapshot.docs.map(doc => {
+        rpoints.value = snapshot.docs.map(doc => {
             const data = doc.data();
             return {
                 id: doc.id,
@@ -52,7 +52,7 @@ onMounted(() => {
 // Helper functions
 function createDefaultRPoint() {
     return {
-        rPointId: "",
+        rpointId: "",
         name: "",
         type: "",
         coordinates: { lat: null, lng: null },
@@ -80,9 +80,9 @@ async function checkExistingRPoint() {
         coordinatesExists: !coordinatesSnapshot.empty
     };
 };
-const getRouteNamesForRPoint = (rPointId) => {
+const getRouteNamesForRPoint = (rpointId) => {
     const matchingRoutes = routes.value.filter(route =>
-        route.rPoints && route.rPoints.includes(rPointId)
+        route.rpoints && route.rpoints.includes(rpointId)
     );
     return matchingRoutes.map(route => route.name).join(', ') || '-';
 };
@@ -127,7 +127,7 @@ async function createRPoint() {
     try {
         const newRPointRef = doc(rPointCollection);
         const rPointData = {
-            rPointId: newRPointRef.id,
+            rpointId: newRPointRef.id,
             name: currentRPoint.name,
             type: currentRPoint.type,
             coordinates: new GeoPoint(
@@ -156,7 +156,7 @@ async function updateRPoint() {
 }
 async function deleteRPoint() {
     try {
-        const routesQuery = query(routeCollection, where("rPoints", "array-contains", rPointToDelete.value));
+        const routesQuery = query(routeCollection, where("rpoints", "array-contains", rPointToDelete.value));
         const routeSnapshot = await getDocs(routesQuery);
         if (!routeSnapshot.empty) {
             const routeNames = routeSnapshot.docs.map(doc => doc.data().name).join(', ');
@@ -211,7 +211,7 @@ const saveRPoint = async () => {
 };
 const confirmDelete = async (id) => {
     rPointToDelete.value = id;
-    const routesQuery = query(routeCollection, where("rPoints", "array-contains", id));
+    const routesQuery = query(routeCollection, where("rpoints", "array-contains", id));
     const routeSnapshot = await getDocs(routesQuery);
     routesUsingRPoint.value = routeSnapshot.docs.map(doc => doc.data());
     showDeleteModal.value = true;
@@ -308,13 +308,13 @@ watch(() => currentRPoint.coordinates, (newVal) => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-if="rPoints.length === 0">
+                                    <tr v-if="rpoints.length === 0">
                                         <td colspan="6" class="text-center py-4">
                                             No location found
                                         </td>
                                     </tr>
 
-                                    <tr v-for="rPoint in rPoints" :key="rPoint.rPointId">
+                                    <tr v-for="rPoint in rpoints" :key="rPoint.rpointId">
                                         <td>
                                             <p class="text-sm font-weight-bold mb-0">{{ rPoint.name }}</p>
                                         </td>
@@ -442,7 +442,7 @@ watch(() => currentRPoint.coordinates, (newVal) => {
                                                 </div>
                                                 <GoogleMapPicker v-if="showAddRPointModal"
                                                     v-model:coordinates="currentRPoint.coordinates"
-                                                    :existing-rPoints="rPoints" :is-editing="editingRPoint"
+                                                    :existing-rpoints="rpoints" :is-editing="editingRPoint"
                                                     :editing-rPoint-id="editingRPoint ? currentRPoint.id : null"
                                                     :center="mapCenter" class="mt-3 rpoint-page-map flex-grow-1" />
                                             </div>

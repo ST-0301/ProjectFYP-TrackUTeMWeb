@@ -14,7 +14,7 @@ const props = defineProps({
     enableClickToAdd: { type: Boolean, default: true },
     enableDraggableMarkers: { type: Boolean, default: true },
 });
-const emit = defineEmits(['update:coordinates', 'marker-clicked', 'marker-dragged']);
+const emit = defineEmits(['update:coordinates', 'marker-clicked', 'marker-dragged', 'marker-added']);
 const DEFAULT_CENTER = { lat: 2.3114, lng: 102.3203 };
 const internalCoordinates = reactive({
     lat: props.coordinates.lat ?? DEFAULT_CENTER.lat,
@@ -31,7 +31,7 @@ const handleMapClick = (e) => {
     };
     internalCoordinates.lat = newCoordinates.lat;
     internalCoordinates.lng = newCoordinates.lng;
-    emit('update:coordinates', newCoordinates);
+    emit('marker-added', { position: newCoordinates });
 };
 const handleMarkerDrag = (e) => {
     const newCoordinates = {
@@ -40,62 +40,175 @@ const handleMarkerDrag = (e) => {
     };
     internalCoordinates.lat = newCoordinates.lat;
     internalCoordinates.lng = newCoordinates.lng;
-    emit('update:coordinates', newCoordinates);
+    emit('marker-dragged', { id: e.id, position: newCoordinates });
 };
-const updateMarkers = () => {
-    const newMarkers = [...props.existingRPoints].map(rPoint => {
-        return {
-            id: rPoint.id,
-            position: {
-                lat: rPoint.coordinates.latitude,
-                lng: rPoint.coordinates.longitude
-            },
-            title: rPoint.name,
-            clickable: true,
-            draggable: false,
-            color: '#4285F4'
-        };
-    });
+// const updateMarkers = () => {
+//     const newMarkers = [...props.existingRPoints].map(rPoint => {
+//         return {
+//             id: rPoint.id,
+//             position: {
+//                 lat: rPoint.coordinates.latitude,
+//                 lng: rPoint.coordinates.longitude
+//             },
+//             title: rPoint.name,
+//             clickable: true,
+//             draggable: false,
+//             color: '#4285F4'
+//         };
+//     });
 
-    props.eventRPoints.forEach(eventPoint => {
-        const lat = eventPoint.coordinates.latitude ?? eventPoint.coordinates.lat;
-        const lng = eventPoint.coordinates.longitude ?? eventPoint.coordinates.lng;
-        if (typeof lat === 'number' && typeof lng === 'number') {
+//     props.eventRPoints.forEach(eventPoint => {
+//         const lat = eventPoint.coordinates.latitude ?? eventPoint.coordinates.lat;
+//         const lng = eventPoint.coordinates.longitude ?? eventPoint.coordinates.lng;
+//         if (typeof lat === 'number' && typeof lng === 'number') {
+//             newMarkers.push({
+//                 id: eventPoint.id,
+//                 position: { lat, lng },
+//                 title: eventPoint.name || 'Event Location',
+//                 clickable: true,
+//                 draggable: props.enableDraggableMarkers,
+//                 color: '#EA4335' // red
+//             });
+//         }
+//     });
+//     markers.value = newMarkers;
+// };
+// const updateMarkers = () => {
+//     const newMarkers = [];
+
+//     // Add existing bus stops (blue markers)
+//     props.existingRPoints.forEach(rPoint => {
+//         newMarkers.push({
+//             id: rPoint.id,
+//             position: {
+//                 lat: rPoint.coordinates.latitude,
+//                 lng: rPoint.coordinates.longitude
+//             },
+//             title: rPoint.name,
+//             clickable: true,
+//             draggable: false, // Bus stops are not draggable
+//             color: '#4285F4' // Blue for bus stops
+//         });
+//     });
+
+//     // Add event points (red markers)
+//     props.eventRPoints.forEach(eventPoint => {
+//         const lat = eventPoint.coordinates.latitude ?? eventPoint.coordinates.lat;
+//         const lng = eventPoint.coordinates.longitude ?? eventPoint.coordinates.lng;
+//         if (typeof lat === 'number' && typeof lng === 'number') {
+//             newMarkers.push({
+//                 id: eventPoint.id,
+//                 position: { lat, lng },
+//                 title: eventPoint.name || 'Event Location',
+//                 clickable: true,
+//                 draggable: props.enableDraggableMarkers,
+//                 color: '#EA4335' // Red for event points
+//             });
+//         }
+//     });
+//     markers.value = newMarkers;
+// };
+const updateMarkers = () => {
+    const newMarkers = [];
+
+    // Add existing bus stops (blue markers) - these should be clickable
+    props.existingRPoints.forEach(rPoint => {
+        const position = getPosition(rPoint.coordinates);
+        // Ensure coordinates exist and are valid
+        if (position && typeof position.lat === 'number' && typeof position.lng === 'number') {
             newMarkers.push({
-                id: eventPoint.id,
-                position: { lat, lng },
-                title: eventPoint.name || 'Event Location',
-                clickable: true,
-                draggable: props.enableDraggableMarkers,
-                color: '#EA4335' // red
+                id: rPoint.id,
+                position,
+                title: rPoint.name || 'Bus Stop',
+                clickable: true, // Make sure bus stops are clickable
+                draggable: false, // Bus stops are not draggable
+                color: '#4285F4' // Blue for bus stops
             });
         }
     });
+
+    // Add event points (red markers)
+    props.eventRPoints.forEach(eventPoint => {
+        const position = getPosition(eventPoint.coordinates);
+        if (position && typeof position.lat === 'number' && typeof position.lng === 'number') {
+            newMarkers.push({
+                id: eventPoint.id,
+                position,
+                title: eventPoint.name || 'Event Location',
+                clickable: true,
+                draggable: props.enableDraggableMarkers,
+                color: '#EA4335'
+            });
+        }
+    });
+
+    // Add pending coordinates marker if exists
+    if (props.coordinates &&
+        typeof props.coordinates.lat === 'number' &&
+        typeof props.coordinates.lng === 'number') {
+
+        newMarkers.push({
+            id: 'pending',
+            position: {
+                lat: props.coordinates.lat,
+                lng: props.coordinates.lng
+            },
+            title: 'Selected Location',
+            clickable: false,
+            draggable: props.enableDraggableMarkers,
+            color: '#34A853' // Green for pending/selected location
+        });
+    }
+
+    console.log('Updated markers:', newMarkers); // Debug log
     markers.value = newMarkers;
 };
-
+const getPosition = (coords) => {
+    if (!coords) return null;
+    return {
+        lat: coords.latitude ?? coords.lat,
+        lng: coords.longitude ?? coords.lng
+    };
+};
 
 // Watchers
 watch(() => props.coordinates, (newCoordinates) => {
-        internalCoordinates.lat = (typeof newCoordinates.lat === 'number') ? newCoordinates.lat : DEFAULT_CENTER.lat;
-        internalCoordinates.lng = (typeof newCoordinates.lng === 'number') ? newCoordinates.lng : DEFAULT_CENTER.lng;
-    }, { immediate: true, deep: true }
+    internalCoordinates.lat = (typeof newCoordinates.lat === 'number') ? newCoordinates.lat : null;
+    internalCoordinates.lng = (typeof newCoordinates.lng === 'number') ? newCoordinates.lng : null;
+}, { deep: true }
 );
 watch([() => props.existingRPoints, () => internalCoordinates.lat, () => internalCoordinates.lng, () => props.editingRPointId],
     ([newRPoints, lat, lng, editingRPointId]) => {
         const base = newRPoints
             .filter(rPoint => !(props.isEditing && rPoint.id === props.editingRPointId))
-            .map(rPoint => ({
-                id: rPoint.id,
-                position: {
-                    lat: rPoint.coordinates.latitude,
-                    lng: rPoint.coordinates.longitude
-                },
-                title: rPoint.name,
-                clickable: true,
-                draggable: false,
-                color: '#4285F4'
-            }));
+            // .map(rPoint => ({
+            //     id: rPoint.id,
+            //     position: {
+            //         lat: rPoint.coordinates.latitude,
+            //         lng: rPoint.coordinates.longitude
+            //     },
+            //     title: rPoint.name,
+            //     clickable: true,
+            //     draggable: false,
+            //     color: '#4285F4'
+        // }));
+            .map(rPoint => {
+                // Handle different coordinate formats
+                const coords = rPoint.coordinates;
+                const position = {
+                    lat: coords.latitude ?? coords.lat,
+                    lng: coords.longitude ?? coords.lng
+                };
+
+                return {
+                    id: rPoint.id,
+                    position,
+                    title: rPoint.name,
+                    clickable: true,
+                    draggable: false,
+                    color: '#4285F4' // Blue for bus stops
+                };
+            });
 
         if (props.isEditing && props.editingRPointId) {
             const editingRPointData = newRPoints.find(s => s.id === props.editingRPointId) || {};
@@ -125,9 +238,25 @@ watch([() => props.existingRPoints, () => internalCoordinates.lat, () => interna
     },
     { immediate: true, deep: true }
 );
-watch(() => props.eventRPoints, () => {
+// watch(() => props.eventRPoints, () => {
+//         updateMarkers();
+//     }, { deep: true }
+// );
+watch(
+    [() => props.existingRPoints, () => props.eventRPoints],
+    () => {
         updateMarkers();
-    }, { deep: true }
+    },
+    { deep: true, immediate: true }
+);
+watch(
+    () => props.coordinates,
+    (newCoords) => {
+        if (newCoords && typeof newCoords.lat === 'number' && typeof newCoords.lng === 'number') {
+            updateMarkers();
+        }
+    },
+    { deep: true }
 );
 </script>
 

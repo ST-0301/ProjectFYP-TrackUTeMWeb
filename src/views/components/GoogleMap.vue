@@ -90,9 +90,20 @@ const updateMarkers = () => {
             gmpClickable: !!markerConfig.clickable,
             content: createMarkerElement({ color: markerConfig.color || '#EA4335' }) 
         });
+        // if (markerConfig.clickable) {
+        //     marker.addEventListener('gmp-click', () =>
+        //         emit('marker-clicked', markerConfig));
+        // }
         if (markerConfig.clickable) {
-            marker.addEventListener('gmp-click', () =>
-                emit('marker-clicked', markerConfig));
+            marker.addEventListener('gmp-click', () => {
+                console.log('Marker clicked in GoogleMap:', markerConfig); // Debug log
+                emit('marker-clicked', {
+                    id: markerConfig.id,
+                    position: markerConfig.position,
+                    title: markerConfig.title,
+                    ...markerConfig // Include all marker config data
+                });
+            });
         }
         if (markerConfig.draggable) {
             marker.addListener('dragend', (e) => {
