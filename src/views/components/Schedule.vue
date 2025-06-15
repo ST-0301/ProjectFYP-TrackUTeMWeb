@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue';
+// import Datepicker from 'vue3-datepicker';
 import { useRoute } from 'vue-router';
 import { scheduleCollection, routeCollection, rPointCollection, driverCollection, busCollection } from '@/firebase';
 import { query, where, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
@@ -22,6 +23,7 @@ const showDeleteModal = ref(false);
 const currentSlot = ref({ days: [], index: -1, time: '', assignments: [{ driver: '', bus: '' }], originalDays: [], rPointsTimes: [] });
 const slotErrors = ref({ time: '', days: '', general: '' });
 const currentStep = ref(1);
+// const components = { Datepicker };
 
 
 // Lifecycle hooks
@@ -36,13 +38,27 @@ onMounted(async () => {
         (querySnapshot) => {
             const newSchedule = {};
             days.forEach(day => {
-                newSchedule[day.toLowerCase()] = { incampus: [], outcampus: [] };
+                newSchedule[day.toLowerCase()] = { incampus: [], outcampus: [], event: [] };
             });
             querySnapshot.forEach((doc) => {
                 const sched = doc.data();
                 const day = sched.day.toLowerCase();
                 const type = sched.type.toLowerCase();
-                if (newSchedule[day] && newSchedule[day][type]) {
+
+                if (type === 'event') {
+                    if (newSchedule[day] && newSchedule[day].event) {
+                        newSchedule[day].event.push({
+                            id: doc.id,
+                            time: sched.time,
+                            date: sched.date,
+                            assignments: sched.assignments,
+                            status: sched.status,
+                            busId: sched.busId,
+                            driverId: sched.driverId,
+                            rpoints: sched.rpoints || []
+                        });
+                    }
+                } else if (newSchedule[day] && newSchedule[day][type]) {
                     newSchedule[day][type].push({
                         id: doc.id,
                         time: sched.time,
@@ -113,7 +129,10 @@ const checkExistingTimes = () => {
     });
     return conflicts;
 };
-const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
+const capitalize = (str) => {
+    if (!str || typeof str !== 'string') return '';
+    return str.charAt(0).toUpperCase() + str.slice(1);
+};
 
 
 // Validation function
@@ -124,7 +143,12 @@ const validateStep1 = () => {
         slotErrors.value.time = 'Time is required';
         valid = false;
     }
-    if (currentSlot.value.index === -1) { 
+    if (currentRoute.value.type === 'event') {
+        if (!currentSlot.value.date) {
+            slotErrors.value.dates = 'Select a date';
+            valid = false;
+        }
+    } else if (currentSlot.value.index === -1) { 
         if (currentSlot.value.days.length === 0) {
             slotErrors.value.days = 'Select at least one day';
             valid = false;
@@ -177,10 +201,51 @@ const validateStep3 = () => {
 // CRUD operations
 const saveSlot = async () => {
     try {
-        validateStep3(); 
-
-        const { days: selectedDays, time, assignments, isEditing, originalTime } = currentSlot.value;
         const routeId = route.params.id;
+        const assignments = currentSlot.value.assignments || [];
+        const validAssignments = assignments.filter(a => a.driver && a.bus);
+        validateStep3();
+
+        // Event
+        if (currentRoute.value.type === 'event') {
+            const date = currentSlot.value.date;
+
+            if (!date) {
+                slotErrors.value.general = "Please select a date for the event.";
+                return;
+            }
+            const jsDate = new Date(date);
+            const day = jsDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+
+            if (currentSlot.value.isEditing && currentSlot.value.scheduleId) {
+                await updateDoc(doc(scheduleCollection, currentSlot.value.scheduleId), {
+                    date: date,
+                    time: currentSlot.value.time,
+                    driverId: validAssignments[0]?.driver || null,
+                    busId: validAssignments[0]?.bus || null,
+                });
+            } else {
+                const newDocRef = await addDoc(scheduleCollection, {
+                    date,
+                    day,
+                    type: 'event',
+                    routeId,
+                    time: currentSlot.value.time,
+                    driverId: validAssignments[0]?.driver || null,
+                    busId: validAssignments[0]?.bus || null,
+                    status: 'scheduled',
+                    created: new Date(),
+                    rpoints: currentSlot.value.rPointsTimes.map(rp => ({
+                        rpointId: rp.rpointId,
+                    })),
+                });
+                await updateDoc(newDocRef, { scheduleId: newDocRef.id });
+            }
+            closeModal();
+            return;
+        }
+        // Regular
+        const { days: selectedDays, time, isEditing, originalTime } = currentSlot.value;
         const type = activeTab.value;
 
         const rPointsToSave = currentSlot.value.rPointsTimes.map(rp => ({
@@ -197,7 +262,6 @@ const saveSlot = async () => {
                 }
             )
         }));
-        const validAssignments = assignments.filter(a => a.driver && a.bus);
 
         if (isEditing) {
             const originalDay = currentSlot.value.days[0].toLowerCase();
@@ -389,7 +453,6 @@ const openModal = async (initialDay, time = '') => {
         console.warn("Locations not loaded yet.");
         return;
     }
-
     const lowerDay = initialDay.toLowerCase();
     const routeId = route.params.id;
     const type = activeTab.value;
@@ -449,17 +512,31 @@ const openModal = async (initialDay, time = '') => {
             });
         }
 
-        currentSlot.value = {
-            days: [initialDay],
-            originalDays: [initialDay],
-            originalTime: time,
-            time: time,
-            initialDay: initialDay,
-            assignments: assignmentsData,
-            isEditing: true,
-            rPointsTimes: rPointsTimesData
-        };
+        if (currentRoute.value.type === 'event') {
+            const slotData = eventScheduleRows.value
+                .find(row => row.time === time)
+                ?.byDay[initialDay.toLowerCase()];
 
+            currentSlot.value = {
+                date: slotData?.date || '',
+                time: time,
+                assignments: [{ driver: '', bus: '' }],
+                isEditing: !!slotData,
+                rPointsTimes: [],
+                scheduleId: slotData?.id || ''
+            };
+        } else {
+            currentSlot.value = {
+                days: [initialDay],
+                originalDays: [initialDay],
+                originalTime: time,
+                time: time,
+                initialDay: initialDay,
+                assignments: assignmentsData,
+                isEditing: true,
+                rPointsTimes: rPointsTimesData
+            };
+        }
     } else {
         const routeRPointIds = currentRoute.value.rpoints || [];
         const initializedRPointsTimes = routeRPointIds.map(rpointId => {
@@ -483,6 +560,33 @@ const openModal = async (initialDay, time = '') => {
             rPointsTimes: initializedRPointsTimes
         };
     }
+    currentStep.value = 1;
+    showSlotModal.value = true;
+};
+const openModalForEvent = () => {
+    const routeRPointIds = currentRoute.value.rpoints || [];
+    const initializedRPointsTimes = routeRPointIds.map(rpointId => {
+        const rPoint = rpoints.value.find(rp => rp.id === rpointId);
+        return {
+            rpointId,
+            name: rPoint ? rPoint.name : 'Unknown',
+            expDepTime: '',
+            expArrTime: ''
+        };
+    });
+
+    currentSlot.value = {
+        date: '',
+        time: '',
+        assignments: [{ driver: '', bus: '' }],
+        isEditing: false,
+        rPointsTimes: initializedRPointsTimes,
+        days: [],
+        originalDays: [],
+        index: -1,
+        initialDay: null
+    };
+
     currentStep.value = 1;
     showSlotModal.value = true;
 };
@@ -513,13 +617,21 @@ const removeAssignment = (index) => {
 const nextStep = () => {
     if (currentStep.value === 1) {
         if (!validateStep1()) return;
+        if (currentRoute.value.type === 'event') {
+            currentStep.value = 3;
+            return;
+        }
     } else if (currentStep.value === 2) {
         if (!validateStep2()) return;
     }
     currentStep.value++;
 };
 const prevStep = () => {
-    currentStep.value--;
+    if (currentStep.value === 3 && currentRoute.value.type === 'event') {
+        currentStep.value = 1;
+    } else {
+        currentStep.value--;
+    }
 };
 
 
@@ -540,6 +652,38 @@ const availableBuses = (currentAssignment) => {
         !usedBuses.value.has(bus.id) || bus.id === currentAssignment.bus
     );
 };
+const eventScheduleRows = computed(() => {
+    if (currentRoute.value.type !== 'event') return [];
+    const allEventSlots = [];
+    days.forEach(day => {
+        const dayKey = day.toLowerCase();
+        const eventSlots = schedule.value[dayKey]?.event || [];
+        eventSlots.forEach(slot => {
+            allEventSlots.push({
+                time: slot.time,
+                day: dayKey,
+                date: slot.date,
+                drivers: slot.driverId ? 1 : 0,
+                buses: slot.busId ? 1 : 0,
+                id: slot.id 
+            });
+        });
+    });
+    // Group by time
+    const timeMap = {};
+    allEventSlots.forEach(slot => {
+        if (!timeMap[slot.time]) {
+            timeMap[slot.time] = { time: slot.time, byDay: {} };
+        }
+        timeMap[slot.time].byDay[slot.day] = {
+            date: slot.date,
+            drivers: slot.drivers,
+            buses: slot.buses,
+            id: slot.id
+        };
+    });
+    return Object.values(timeMap).sort((a, b) => a.time.localeCompare(b.time));
+});
 
 
 // Watchers
@@ -557,7 +701,7 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
 
             <!-- Tab Buttons -->
             <div class="card-body">
-                <div class="tabs-container justify-content-center mb-4">
+                <div v-if="currentRoute.type !== 'event'" class="tabs-container justify-content-center mb-4">
                     <ul class="nav nav-pills nav-fill equal-width-tabs-centered">
                         <li class="nav-item">
                             <button class="nav-link" :class="{ 'active': activeTab === 'incampus' }"
@@ -574,6 +718,13 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                     </ul>
                 </div>
 
+                <div v-if="currentRoute.type === 'event'" class="d-flex justify-content-end mb-3">
+                    <argon-button color="primary" @click="openModalForEvent">
+                        <i class="fas fa-plus me-1"></i> Add Schedule
+                    </argon-button>
+                </div>
+
+
                 <!-- Schedule Table -->
                 <div class="table-responsive">
                     <table class="table table-bordered text-center" style="table-layout: fixed">
@@ -587,15 +738,15 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                                 <th v-for="day in days" :key="day" class="text-sm text-center bg-light px-3 py-3">
                                     <div class="d-flex align-items-center justify-content-center gap-2">
                                         <span class="text-truncate">{{ capitalize(day) }}</span>
-                                        <button class="btn btn-link mb-0 p-0" @click="openModal(day)"
-                                            title="Add time slot">
+                                        <button v-if="currentRoute.type !== 'event'" class="btn btn-link mb-0 p-0"
+                                            @click="openModal(day)" title="Add time slot">
                                             <i class="fas fa-plus-circle fs-6"></i>
                                         </button>
                                     </div>
                                 </th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <!-- <tbody>
                             <tr v-for="time in getAllTimes()" :key="time">
                                 <td class="text-sm">{{ time }}</td>
                                 <td v-for="day in days" :key="day" class="text-truncate">
@@ -610,6 +761,58 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                                                 {{ getCounts(day, time).buses }}
                                             </span>
                                         </button>
+                                    </template>
+                                    <template v-else>
+                                        &nbsp;
+                                    </template>
+                                </td>
+                            </tr>
+                        </tbody> -->
+                        <tbody v-if="currentRoute.type !== 'event'">
+                            <tr v-for="time in getAllTimes()" :key="time">
+                                <td class="text-sm">{{ time }}</td>
+                                <td v-for="day in days" :key="day" class="text-truncate">
+                                    <template v-if="getSlotIndex(day, time) !== -1">
+                                        <button class="btn btn-light mb-0 px-3 py-2" @click="openModal(day, time)">
+                                            <span class="badge text-dark me-2">
+                                                <i class="fas fa-user me-1"></i>
+                                                {{ getCounts(day, time).drivers }}
+                                            </span>
+                                            <span class="badge text-dark">
+                                                <i class="fas fa-bus me-1"></i>
+                                                {{ getCounts(day, time).buses }}
+                                            </span>
+                                        </button>
+                                    </template>
+                                    <template v-else>
+                                        &nbsp;
+                                    </template>
+                                </td>
+                            </tr>
+                        </tbody>
+
+
+                        <tbody v-else>
+                            <tr v-for="(slots, idx) in eventScheduleRows" :key="idx">
+                                <td class="text-sm">{{ slots.time }}</td>
+                                <td v-for="day in days" :key="day" class="text-truncate">
+                                    <template v-if="slots.byDay[day.toLowerCase()]">
+                                        <div>
+                                            <div class="small text-muted mb-1">
+                                                {{ slots.byDay[day.toLowerCase()].date }}
+                                            </div>
+                                            <button class="btn btn-light mb-0 px-3 py-2"
+                                                @click="openModal(day, slots.time)">
+                                                <span class="badge text-dark me-2">
+                                                    <i class="fas fa-user me-1"></i>
+                                                    {{ slots.byDay[day.toLowerCase()].drivers }}
+                                                </span>
+                                                <span class="badge text-dark">
+                                                    <i class="fas fa-bus me-1"></i>
+                                                    {{ slots.byDay[day.toLowerCase()].buses }}
+                                                </span>
+                                            </button>
+                                        </div>
                                     </template>
                                     <template v-else>
                                         &nbsp;
@@ -645,7 +848,17 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                                 <div v-if="slotErrors.time" class="text-danger text-sm mt-1">{{ slotErrors.time }}</div>
                             </div>
 
-                            <div class="mb-3">
+                            <div v-if="currentRoute.type === 'event'" class="mb-3">
+                                <label class="form-label">Event Date(s)</label>
+                                <!-- <Datepicker v-model="currentSlot.dates" :multi-dates="true" :min-date="new Date()" /> -->
+
+                                <input type="date" class="form-control" v-model="currentSlot.date"
+                                    :min="new Date().toISOString().split('T')[0]" />
+                                <div v-if="slotErrors.dates" class="text-danger text-sm mt-1">{{ slotErrors.dates }}
+                                </div>
+                            </div>
+
+                            <div v-if="!currentSlot.isEditing && currentRoute.type !== 'event'" class="mb-3">
                                 <div v-if="!currentSlot.isEditing">
                                     <label class="form-label">Day (s)</label>
                                     <div class="d-flex flex-wrap gap-3">
@@ -668,7 +881,7 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                             </div>
                         </div>
 
-                        <div v-if="currentStep === 2">
+                        <div v-if="currentStep === 2 && currentRoute.type !== 'event'">
                             <div class="mb-3">
                                 <label class="form-label">Location Timings</label>
                                 <div v-if="currentSlot.rPointsTimes && currentSlot.rPointsTimes.length">

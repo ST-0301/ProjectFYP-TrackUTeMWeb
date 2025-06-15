@@ -38,6 +38,7 @@
     "vue-flatpickr-component": "11.0.4",
     "vue-ganttastic": "^0.9.34",
     "vue-router": "4.3.0",
+    "vue3-datepicker": "^0.4.0",
     "vue3-google-map": "^0.22.0",
     "vuex": "4.1.0",
     "yorkie": "github:yyx990803/yorkie"
