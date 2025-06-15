@@ -2,7 +2,7 @@
 import { initializeApp } from "firebase/app";
 // import { getAnalytics } from "firebase/analytics";
 import { getFirestore, collection } from "firebase/firestore";
-import { getDatabase, ref } from "firebase/database";
+import { ref } from "firebase/database";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 // TODO: Add SDKs for Firebase products that you want to use
@@ -24,7 +24,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 // const analytics = getAnalytics(app);
 const db = getFirestore(app);
-const database = getDatabase(app);
+// const database = getDatabase(app);
 
 const auth = getAuth(app);
 const storage = getStorage(app);
@@ -36,4 +36,4 @@ const rPointCollection = collection(db, "routePoints");
 const routeCollection = collection(db, "routes");
 const scheduleCollection = collection(db, 'schedules');
 
-export { db, driverCollection, busCollection, rPointCollection, routeCollection, scheduleCollection, database, ref, auth, storage };
+export { db, driverCollection, busCollection, rPointCollection, routeCollection, scheduleCollection, ref, auth, storage };

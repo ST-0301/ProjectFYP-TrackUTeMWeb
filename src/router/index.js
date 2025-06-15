@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import Dashboard from "../views/Dashboard.vue";
 import Tables from "../views/Tables.vue";
-import BusLocation from '../views/BusLocation.vue';
+import DriverLocation from '../views/DriverLocation.vue';
 import Drivers from "../views/Drivers.vue";
 import Buses from "../views/Buses.vue";
 import RoutePoints from "../views/RoutePoints.vue";
@@ -29,9 +29,9 @@ const routes = [
     component: Tables,
   },
     {
-    path: '/bus-location',
-    name: 'bus-location',
-    component: BusLocation
+    path: '/driver-location',
+    name: 'driver-location',
+    component: DriverLocation
   },
   {
     path: "/drivers",

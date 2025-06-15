@@ -35,6 +35,13 @@ const clickListener = ref(null);
 
 // Helper function
 const createMarkerElement = (config) => {
+    if (config.content) {
+        const element = document.createElement('div');
+        element.innerHTML = config.content;
+        console.log('Marker DOM element created:', element);
+        return element;
+    }
+    // Default marker element
     const element = document.createElement('div');
     element.className = 'advanced-marker';
     element.innerHTML = `
@@ -88,7 +95,9 @@ const updateMarkers = () => {
             title: markerConfig.title,
             gmpDraggable: !!markerConfig.draggable,
             gmpClickable: !!markerConfig.clickable,
-            content: createMarkerElement({ color: markerConfig.color || '#EA4335' }) 
+            content: markerConfig.content
+                ? createMarkerElement({ content: markerConfig.content }) // <-- use the provided content
+                : createMarkerElement({ color: markerConfig.color || '#EA4335' }) // fallback to default
         });
         // if (markerConfig.clickable) {
         //     marker.addEventListener('gmp-click', () =>

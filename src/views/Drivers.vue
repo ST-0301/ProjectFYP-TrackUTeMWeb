@@ -23,6 +23,32 @@ const errors = ref({
     password: '',
     confirmPassword: ''
 });
+const statusDisplay = {
+    available: {
+        label: "Available",
+        color: "bg-gradient-success",
+        icon: "fas fa-check-circle",
+        tooltip: "Driver is ready for work"
+    },
+    on_duty: {
+        label: "On Duty",
+        color: "bg-gradient-primary",
+        icon: "fas fa-route",
+        tooltip: "Driver is currently working"
+    },
+    rest: {
+        label: "Rest",
+        color: "bg-gradient-warning",
+        icon: "fas fa-coffee",
+        tooltip: "Driver is on a break"
+    },
+    off_duty: {
+        label: "Off Duty",
+        color: "bg-gradient-secondary",
+        icon: "fas fa-power-off",
+        tooltip: "Driver is off for the day"
+    }
+};
 
 
 // Lifecycle hooks
@@ -352,11 +378,12 @@ const formatPhoneInput = (event) => {
                                             <p class="text-sm font-weight-bold mb-0">{{ driver.licenseNumber }}</p>
                                         </td>
                                         <td>
-                                            <span class="badge badge-sm" :class="{
-                                                'bg-gradient-success': driver.status === 'active',
-                                                'bg-gradient-secondary': driver.status === 'inactive'
-                                            }">
-                                                {{ driver.status }}
+                                            <span class="badge badge-sm d-inline-flex align-items-center gap-1"
+                                                :class="statusDisplay[driver.status]?.color"
+                                                :title="statusDisplay[driver.status]?.tooltip"
+                                                style="font-size: 0.8em;">
+                                                <i :class="statusDisplay[driver.status]?.icon"></i>
+                                                {{ statusDisplay[driver.status]?.label || driver.status }}
                                             </span>
                                         </td>
                                         <td class="align-middle">

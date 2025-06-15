@@ -25,14 +25,7 @@ const errors = ref({ name: '', rpoints: '', generaL: '' });
 const DEFAULT_CENTER = { lat: 2.3114, lng: 102.3203 };
 const mapCenter = ref({ ...DEFAULT_CENTER });
 const busStops = computed(() => {
-    // Option 1: If all rpoints are bus stops (no type field needed)
-    // return rpoints.value;
-
-    // Option 2: If you have a type field, make sure it matches your data
-    return rpoints.value.filter(rp => rp.type === 'bus_stop'); // note: underscore, not 'busstop'
-
-    // Option 3: If you want to be more flexible and include items without a type
-    // return rpoints.value.filter(rp => !rp.type || rp.type === 'bus_stop' || rp.type === 'busstop');
+    return rpoints.value.filter(rp => rp.type === 'bus_stop');
 });
 
 // Lifecycle hooks
@@ -49,17 +42,13 @@ onMounted(() => {
             return {
                 id: doc.id,
                 ...data,
-                // Add proper coordinate formatting
                 coordinates: {
                     latitude: data.coordinates?.latitude || data.coordinates?.lat,
                     longitude: data.coordinates?.longitude || data.coordinates?.lng
                 }
             };
         });
-        console.log('Loaded rpoints:', rpoints.value);
     });
-    console.log('Loaded rpoints:', rpoints.value);
-    console.log('First rpoint structure:', rpoints.value[0]);
     return () => { routesUnsub(); rPointUnsub(); }
 });
 
@@ -179,7 +168,7 @@ async function saveRoute() {
                     const newRPointRef = doc(rPointCollection);
                     const newRPointData = {
                         name: rPointData.name,
-                        // type: 'event',
+                        type: 'event',
                         coordinates: geoCoordinates,
                         created: new Date().toISOString()
                     };
@@ -211,8 +200,7 @@ async function saveRoute() {
         }
         closeModal();
     } catch (error) {
-        console.error("Error saving route:", error);
-        errors.value.general = "Failed to save route. Please check your connection."; //Set a general error
+        errors.value.general = "Failed to save route. Please check your connection.";
     }
 }
 const deleteRoute = async () => {
@@ -229,7 +217,6 @@ const deleteRoute = async () => {
         await deleteDoc(routeDocRef);
         showDeleteModal.value = false;
     } catch (error) {
-        console.error("Error deleting route:", error);
         errors.value.general = error.message;
     }
 };
@@ -248,15 +235,12 @@ const editRoute = (route) => {
     editingRoute.value = true;
     rPointSelectionMode.value = route.type;
 
-    // Add safe access for rpoints
     const routeRPoints = route.rpoints || [];
-
     if (route.type === 'regular') {
         currentRoute.rpoints = routeRPoints.map(rpointId => ({
             type: 'regular',
             id: rpointId
         }));
-
         if (routeRPoints.length) {
             const firstRPoint = rpoints.value.find(s => s.id === routeRPoints[0]);
             if (firstRPoint) mapCenter.value = {
@@ -274,7 +258,6 @@ const editRoute = (route) => {
                 coordinates: rPoint.coordinates
             } : null;
         }).filter(Boolean);
-
         if (currentRoute.rpoints.length) {
             mapCenter.value = {
                 lat: currentRoute.rpoints[0].coordinates.latitude,
@@ -286,7 +269,7 @@ const editRoute = (route) => {
 };
 const confirmDelete = async (id) => {
     routeToDelete.value = id;
-    const scheduleQuery = query(routeCollection, where("routeId", "==", id));
+    const scheduleQuery = query(scheduleCollection, where("routeId", "==", id));
     const scheduleSnapshot = await getDocs(scheduleQuery);
     schedulesUsingRoute.value = scheduleSnapshot.docs.map(doc => doc.data());
     showDeleteModal.value = true;
@@ -298,15 +281,10 @@ const closeModal = () => {
     errors.value = { name: '', rpoints: '', generaL: '' };
 };
 function handleMarkerClick(rPointInfo) {
-    console.log('Marker clicked:', rPointInfo);
-    
     if (rPointSelectionMode.value === 'regular' && rPointInfo.id) {
         const rpointId = rPointInfo.id;
         if (!currentRoute.rpoints.some(s => s.type === 'regular' && s.id === rpointId)) {
             currentRoute.rpoints.push({ type: 'regular', id: rpointId });
-            console.log('Added bus stop:', rpointId);
-        } else {
-            console.log('Bus stop already added:', rpointId); // Debug log
         }
     } else if (rPointSelectionMode.value === 'event' && rPointInfo.position) {
         if (editingPinpointIndex.value !== null) {
@@ -332,7 +310,6 @@ function handlePinpointDrag({ position }) {
         pendingPinpoint.value.longitude = lng;
         pendingPinpoint.value = { ...pendingPinpoint.value };
     }
-
     if (editingPinpointIndex.value !== null) {
         const rPoint = currentRoute.rpoints[editingPinpointIndex.value];
         if (rPoint) {

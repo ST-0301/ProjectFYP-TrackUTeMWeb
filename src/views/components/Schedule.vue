@@ -187,7 +187,15 @@ const saveSlot = async () => {
             rpointId: rp.rpointId,
             expDepTime: rp.expDepTime,
             expArrTime: rp.expArrTime,
-            status: 'scheduled'
+            status: 'scheduled',
+            ...(currentSlot.value.isEditing
+                ? {}
+                : {
+                    actDepTime: null,
+                    actArrTime: null,
+                    latenessMinutes: 0
+                }
+            )
         }));
         const validAssignments = assignments.filter(a => a.driver && a.bus);
 
@@ -221,20 +229,46 @@ const saveSlot = async () => {
                     busId: null,
                     status: 'scheduled',
                     created: new Date(),
-                    rpoints: rPointsToSave,
+                    rpoints: currentSlot.value.rPointsTimes.map(rp => ({
+                        rpointId: rp.rpointId,
+                        expDepTime: rp.expDepTime,
+                        expArrTime: rp.expArrTime,
+                        status: 'scheduled',
+                        actDepTime: null,
+                        actArrTime: null,
+                        latenessMinutes: 0
+                    })),
                 });
                 updatePromises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
             } else {
                 for (const assignment of validAssignments) {
                     if (assignment.id) {
                         if (existingDocs.has(assignment.id)) {
+                            const docSnap = await getDoc(existingDocs.get(assignment.id));
+                            const existingData = docSnap.exists() ? docSnap.data() : {};
+                            const existingRPoints = Array.isArray(existingData.rpoints) ? existingData.rpoints : [];
+
+                            const mergedRPoints = currentSlot.value.rPointsTimes.map(rp => {
+                                const existing = existingRPoints.find(er => er.rpointId === rp.rpointId) || {};
+                                return {
+                                    rpointId: rp.rpointId,
+                                    expDepTime: rp.expDepTime,
+                                    expArrTime: rp.expArrTime,
+                                    status: 'scheduled',
+                                    actDepTime: existing.actDepTime ?? null,
+                                    actArrTime: existing.actArrTime ?? null,
+                                    latenessMinutes: existing.latenessMinutes ?? 0
+                                };
+                            });
+
                             updatePromises.push(
                                 updateDoc(existingDocs.get(assignment.id), {
                                     time: time,
                                     driverId: assignment.driver,
                                     busId: assignment.bus,
-                                    rpoints: rPointsToSave,
-                                }));
+                                    rpoints: mergedRPoints,
+                                })
+                            );
                             existingDocs.delete(assignment.id);
                         }
                     } else {
@@ -247,7 +281,15 @@ const saveSlot = async () => {
                             busId: assignment.bus,
                             status: 'scheduled',
                             created: new Date(),
-                            rpoints: rPointsToSave,
+                            rpoints: currentSlot.value.rPointsTimes.map(rp => ({
+                                rpointId: rp.rpointId,
+                                expDepTime: rp.expDepTime,
+                                expArrTime: rp.expArrTime,
+                                status: 'scheduled',
+                                actDepTime: null,
+                                actArrTime: null,
+                                latenessMinutes: 0
+                            })),
                         });
                         updatePromises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
                     }
@@ -256,7 +298,6 @@ const saveSlot = async () => {
                     deletePromises.push(deleteDoc(ref));
                 });
             }
-
             await Promise.all([...updatePromises, ...deletePromises]);
         } else {
             const promises = [];
