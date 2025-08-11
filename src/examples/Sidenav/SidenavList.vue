@@ -11,7 +11,7 @@ const getRoute = () => {
 <template>
   <div class="collapse navbar-collapse w-auto h-auto h-100" id="sidenav-collapse-main">
     <ul class="navbar-nav">
-      <li class="nav-item">
+      <!-- <li class="nav-item">
         <sidenav-item to="/dashboard-default" :class="getRoute() === 'dashboard-default' ? 'active' : ''"
           navText="Dashboard [Template]">
           <template v-slot:icon>
@@ -26,7 +26,7 @@ const getRoute = () => {
             <i class="ni ni-calendar-grid-58 text-warning text-sm opacity-10"></i>
           </template>
         </sidenav-item>
-      </li>
+      </li> -->
 
       <li class="nav-item">
         <sidenav-item to="/driver-location" :class="getRoute() === 'driver-location' ? 'active' : ''"
@@ -63,6 +63,14 @@ const getRoute = () => {
 
       <li class="nav-item">
         <sidenav-item to="/routes" :class="getRoute() === 'routes' ? 'active' : ''" navText="Routes">
+          <template v-slot:icon>
+            <i class="fas fa-route text-danger text-sm opacity-10"></i>
+          </template>
+        </sidenav-item>
+      </li>
+
+      <li class="nav-item">
+        <sidenav-item to="/schedules" :class="getRoute() === 'schedulespage' ? 'active' : ''" navText="Schedules">
           <template v-slot:icon>
             <i class="fas fa-route text-danger text-sm opacity-10"></i>
           </template>

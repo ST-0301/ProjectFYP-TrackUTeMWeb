@@ -1,34 +1,49 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { deleteDoc, updateDoc, setDoc, onSnapshot, doc, getDocs, query, where } from 'firebase/firestore';
-import { busCollection } from '@/firebase';
+import { busCollection, driverCollection, busDriverPairingCollection } from '@/firebase';
+import BusDriverPairingTable from '@/views/components/BusDriverPairingTable.vue';
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
 
 
 // Reactive state
 const buses = ref([]);
+const drivers = ref([]);
+const busDriverPairings = ref([]);
 const showAddBusModal = ref(false);
 const showDeleteModal = ref(false);
 const editingBus = ref(false);
 const currentBus = ref(createDefaultBus());
 const busToDelete = ref(null);
 const errors = ref({
-    licensePlate: '',
+    plateNumber: '',
     capacity: '',
     general: ''
 });
+const showPairingModal = ref(false);
 
 
 // Lifecycle hooks
 onMounted(() => {
-    const unsubscribe = onSnapshot(busCollection, (snapshot) => {
+    const unsubscribeBuses = onSnapshot(busCollection, (snapshot) => {
         buses.value = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
         }));
     });
-    return () => unsubscribe();
+    const unsubscribeDrivers = onSnapshot(driverCollection, (snapshot) => {
+        drivers.value = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+    });
+
+    fetchPairings();
+    return () => {
+        unsubscribeBuses();
+        unsubscribeDrivers();
+    };
 });
 
 
@@ -36,47 +51,42 @@ onMounted(() => {
 function createDefaultBus() {
     return {
         busId: "",
-        licensePlate: "",
+        plateNumber: "",
         capacity: "",
         created: null,
         status: "active"
     };
 }
-async function checkExistingLicensePlate() {
-    const q = query(busCollection, where("licensePlate", "==", currentBus.value.licensePlate));
+async function checkExistingPlateNumber() {
+    const q = query(busCollection, where("plateNumber", "==", currentBus.value.plateNumber));
     const snapshot = await getDocs(q);
     if (snapshot.empty) {
         return false;
     }
-
-    // If editing, make sure it's not the same bus being edited
     if (editingBus.value) {
-        // Check if any document is not the same as current bus's ID
         return snapshot.docs.some(doc => doc.id !== currentBus.value.id);
     }
-
-    // If adding a new bus, any match is a duplicate
     return true;
 };
 
 
 // Validation functions
-const validateLicensePlate = async () => {
-    const licensePlate = currentBus.value.licensePlate.trim();
-    const licensePlatePattern = /^[A-Z0-9]{2,8}$/;
-    if (!licensePlate) {
-        errors.value.licensePlate = 'License plate is required';
+const validatePlateNumber = async () => {
+    const plateNumber = currentBus.value.plateNumber.trim();
+    const plateNumberPattern = /^[A-Z0-9]{2,8}$/;
+    if (!plateNumber) {
+        errors.value.plateNumber = 'Plate number is required';
         return;
     }
-    if (!licensePlatePattern.test(licensePlate)) {
-        errors.value.licensePlate = 'Must be exactly 8 alphanumeric characters';
+    if (!plateNumberPattern.test(plateNumber)) {
+        errors.value.plateNumber = 'Must be exactly 8 alphanumeric characters';
         return;
     }
-    if (await checkExistingLicensePlate()) {
-        errors.value.licensePlate = 'License plate already exists';
+    if (await checkExistingPlateNumber()) {
+        errors.value.plateNumber = 'Plate number already exists';
         return;
     }
-    errors.value.licensePlate = '';
+    errors.value.plateNumber = '';
 };
 const validateCapacity = () => {
     const capacity = currentBus.value.capacity;
@@ -115,7 +125,7 @@ async function createBus() {
 async function updateBus() {
     const busDocRef = doc(busCollection, currentBus.value.id);
     const updates = {
-        licensePlate: currentBus.value.licensePlate,
+        plateNumber: currentBus.value.plateNumber,
         capacity: currentBus.value.capacity,
         status: currentBus.value.status
     };
@@ -131,6 +141,15 @@ async function deleteBus() {
         errors.value.general = error.message;
     }
 }
+const fetchPairings = async () => {
+    try {
+        const q = query(busDriverPairingCollection);
+        const snapshot = await getDocs(q);
+        busDriverPairings.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (error) {
+        console.error("Error fetching pairings:", error);
+    }
+};
 
 
 // UI handlers
@@ -145,9 +164,9 @@ const editBus = (bus) => {
     showAddBusModal.value = true;
 };
 const saveBus = async () => {
-    await validateLicensePlate();
+    await validatePlateNumber();
     validateCapacity();
-    if (errors.value.licensePlate || errors.value.capacity) return;
+    if (errors.value.plateNumber || errors.value.capacity) return;
     try {
         if (editingBus.value) {
             await updateBus();
@@ -169,19 +188,19 @@ const closeModal = () => {
     editingBus.value = false;
     currentBus.value = createDefaultBus();
     errors.value = {
-        licensePlate: '',
+        plateNumber: '',
         capacity: ''
     };
 };
 
 
 // Formatters
-const formatLicensePlateInput = (event) => {
-    currentBus.value.licensePlate = event.target.value
+const formatPlateNumberInput = (event) => {
+    currentBus.value.plateNumber = event.target.value
         .replace(/[^A-Za-z0-9]/g, '')
         .toUpperCase()
         .slice(0, 8);
-    validateLicensePlate();
+    validatePlateNumber();
 };
 const formatDateTime = (dateInput) => {
     let date;
@@ -216,9 +235,14 @@ const formatDateTime = (dateInput) => {
                     <div class="card-header pb-0">
                         <div class="d-flex justify-content-between align-items-center">
                             <h6>Bus List</h6>
-                            <argon-button color="success" size="sm" @click="addBus">
-                                <i class="ni ni-fat-add"></i> Add Bus
-                            </argon-button>
+                            <div>
+                                <argon-button color="info" size="sm" @click="showPairingModal = true" class="me-2">
+                                    <i class="fas fa-link"></i> View Pairings
+                                </argon-button>
+                                <argon-button color="success" size="sm" @click="addBus">
+                                    <i class="ni ni-fat-add"></i> Add Bus
+                                </argon-button>
+                            </div>
                         </div>
                     </div>
                     <div class="card-body pt-0 pb-2">
@@ -228,8 +252,7 @@ const formatDateTime = (dateInput) => {
                                     <tr>
                                         <th
                                             class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            License
-                                            Plate</th>
+                                            Plate Number</th>
                                         <th
                                             class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
                                             Capacity
@@ -257,7 +280,7 @@ const formatDateTime = (dateInput) => {
 
                                     <tr v-for="bus in buses" :key="bus.busId">
                                         <td>
-                                            <p class="text-sm font-weight-bold mb-0">{{ bus.licensePlate }}</p>
+                                            <p class="text-sm font-weight-bold mb-0">{{ bus.plateNumber }}</p>
                                         </td>
                                         <td>
                                             <p class="text-sm font-weight-bold mb-0">{{ bus.capacity }}</p>
@@ -301,11 +324,11 @@ const formatDateTime = (dateInput) => {
                                 <div class="modal-body">
                                     <form @submit.prevent="saveBus">
                                         <div class="mb-3">
-                                            <label class="form-label">License Plate</label>
-                                            <argon-input v-model="currentBus.licensePlate" type="text"
-                                                placeholder="License plate" @input="formatLicensePlateInput" required />
-                                            <div v-if="errors.licensePlate" class="text-danger text-sm mt-1">{{
-                                                errors.licensePlate }}</div>
+                                            <label class="form-label">Plate Number</label>
+                                            <argon-input v-model="currentBus.plateNumber" type="text"
+                                                placeholder="Plate number" @input="formatPlateNumberInput" required />
+                                            <div v-if="errors.plateNumber" class="text-danger text-sm mt-1">{{
+                                                errors.plateNumber }}</div>
                                         </div>
 
                                         <div class="mb-3">
@@ -363,8 +386,43 @@ const formatDateTime = (dateInput) => {
                         </div>
                     </div>
                     <div class="modal-backdrop fade show" v-if="showDeleteModal"></div>
+
+                    <!-- Bus Driver Pairing Modal -->
+                    <div class="modal fade" :class="{ 'show d-block': showPairingModal }" tabindex="-1" role="dialog"
+                        v-if="showPairingModal">
+                        <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Bus-Driver Pairings</h5>
+                                    <button type="button" class="btn-close" @click="showPairingModal = false"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <BusDriverPairingTable :pairings="busDriverPairings" :buses="buses"
+                                        :drivers="drivers" @update-pairings="fetchPairings" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-backdrop fade show" v-if="showPairingModal"></div>
                 </div>
             </div>
         </div>
     </div>
 </template>
+
+
+
+<style>
+.modal-backdrop {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.modal-content {
+    padding: 20px;
+    max-width: 700px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    max-height: 92vh;
+    overflow-y: auto;
+}
+</style>

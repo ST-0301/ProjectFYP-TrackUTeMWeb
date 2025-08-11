@@ -1,12 +1,14 @@
 import { createRouter, createWebHistory } from "vue-router";
-import Dashboard from "../views/Dashboard.vue";
-import Tables from "../views/Tables.vue";
+// import Dashboard from "../views/Dashboard.vue";
+// import Tables from "../views/Tables.vue";
 import DriverLocation from '../views/DriverLocation.vue';
 import Drivers from "../views/Drivers.vue";
 import Buses from "../views/Buses.vue";
 import RoutePoints from "../views/RoutePoints.vue";
 import Routes from "../views/Routes.vue";
-import Schedule from "../views/components/Schedule.vue";
+// import Schedule from "../views/components/Schedule-copy.vue";
+import Schedule from "../views/components/Schedule-copy2.vue";
+import Schedules from "../views/Schedules.vue";
 
 import Profile from "../views/Profile.vue";
 import Signup from "../views/Signup.vue";
@@ -16,31 +18,31 @@ const routes = [
   {
     path: "/",
     name: "/",
-    redirect: "/dashboard-default",
+    redirect: "/driver-location",
   },
+  // {
+  //   path: "/dashboard-default",
+  //   name: "Dashboard",
+  //   component: Dashboard,
+  // },
+  // {
+  //   path: "/tables",
+  //   name: "Tables",
+  //   component: Tables,
+  // },
   {
-    path: "/dashboard-default",
-    name: "Dashboard",
-    component: Dashboard,
-  },
-  {
-    path: "/tables",
-    name: "Tables",
-    component: Tables,
-  },
-    {
-    path: '/driver-location',
-    name: 'driver-location',
-    component: DriverLocation
+    path: "/driver-location",
+    name: "driver-location",
+    component: DriverLocation,
   },
   {
     path: "/drivers",
-    name: "drivers",
+    name: "Drivers",
     component: Drivers,
   },
   {
     path: "/buses",
-    name: "buses",
+    name: "Buses",
     component: Buses,
   },
   {
@@ -48,7 +50,7 @@ const routes = [
     name: "Locations",
     component: RoutePoints,
   },
-    {
+  {
     path: "/routes",
     name: "routes",
     component: Routes,
@@ -57,6 +59,11 @@ const routes = [
     path: "/routes/:id/schedule",
     name: "RouteSchedule",
     component: Schedule,
+  },
+  {
+    path: "/schedules",
+    name: "Schedules",
+    component: Schedules,
   },
   {
     path: "/profile",

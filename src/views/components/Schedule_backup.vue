@@ -1,6 +1,5 @@
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue';
-// import Datepicker from 'vue3-datepicker';
 import { useRoute } from 'vue-router';
 import { scheduleCollection, routeCollection, rPointCollection, driverCollection, busCollection } from '@/firebase';
 import { query, where, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
@@ -20,10 +19,11 @@ const buses = ref([]);
 const activeTab = ref('incampus');
 const showSlotModal = ref(false);
 const showDeleteModal = ref(false);
-const currentSlot = ref({ days: [], index: -1, time: '', assignments: [{ driver: '', bus: '' }], originalDays: [], rPointsTimes: [] });
+const currentSlot = ref({
+    days: [], index: -1, time: '', tripEndTime: '', assignments: [{ driver: '', bus: '' }], originalDays: [], rPointsTimes: [], queueOpenValue: 1, queueOpenUnit: 'day', queueCloseValue: 15, queueCloseUnit: 'minute', queueOpenOffset: 0, queueCloseOffset: 0 });
 const slotErrors = ref({ time: '', days: '', general: '' });
 const currentStep = ref(1);
-// const components = { Datepicker };
+const unitOptions = ['minute', 'hour', 'day'];
 
 
 // Lifecycle hooks
@@ -66,7 +66,9 @@ onMounted(async () => {
                         status: sched.status,
                         busId: sched.busId,
                         driverId: sched.driverId,
-                        rpoints: sched.rpoints || []
+                        rpoints: sched.rpoints || [],
+                        queueOpenOffset: sched.queueOpenOffset ?? 0,
+                        queueCloseOffset: sched.queueCloseOffset ?? 0
                     });
                 }
             });
@@ -92,7 +94,12 @@ const getRPointNames = (rPointIds) => {
         acc[rPoint.id] = rPoint.name;
         return acc;
     }, {});
-    return rPointIds.map(rpointId => rPointMap[rpointId] || 'Unknown Location').join(' → ') || '→';
+
+    let orderedRPointIds = [...rPointIds];
+    if (activeTab.value === 'outcampus') {
+        orderedRPointIds.reverse();
+    }
+    return orderedRPointIds.map(rpointId => rPointMap[rpointId] || 'Unknown Location').join(' → ') || '→';
 };
 const getAllTimes = () => {
     const allTimes = new Set();
@@ -133,65 +140,124 @@ const capitalize = (str) => {
     if (!str || typeof str !== 'string') return '';
     return str.charAt(0).toUpperCase() + str.slice(1);
 };
+const syncExpArrTimes = () => {
+    for (let i = 1; i < currentSlot.value.rPointsTimes.length; i++) {
+        currentSlot.value.rPointsTimes[i - 1].expArrTime = currentSlot.value.rPointsTimes[i].expDepTime;
+    }
+};
+const convertToMinutes = (value, unit) => {
+    switch (unit) {
+        case 'minute':
+            return value;
+        case 'hour':
+            return value * 60;
+        case 'day':
+            return value * 24 * 60;
+        default:
+            return 0;
+    }
+};
+const convertFromMinutes = (minutes, targetUnit) => {
+    if (minutes === null || minutes === undefined) return { value: '', unit: targetUnit }; // Handle null/undefined offsets
+    switch (targetUnit) {
+        case 'minute':
+            return { value: minutes, unit: 'minute' };
+        case 'hour':
+            if (minutes % 60 === 0) {
+                return { value: minutes / 60, unit: 'hour' };
+            }
+            return { value: minutes, unit: 'minute' };
+        case 'day':
+            if (minutes % (24 * 60) === 0) {
+                return { value: minutes / (24 * 60), unit: 'day' };
+            }
+            if (minutes % 60 === 0) {
+                return { value: minutes / 60, unit: 'hour' };
+            }
+            return { value: minutes, unit: 'minute' };
+        default:
+            return { value: minutes, unit: 'minute' };
+    }
+};
 
 
 // Validation function
 const validateStep1 = () => {
-    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '' };
+    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '', queue: '' };
     let valid = true;
-    if (!currentSlot.value.time) {
-        slotErrors.value.time = 'Time is required';
-        valid = false;
-    }
     if (currentRoute.value.type === 'event') {
-        if (!currentSlot.value.date) {
-            slotErrors.value.dates = 'Select a date';
-            valid = false;
-        }
-    } else if (currentSlot.value.index === -1) { 
-        if (currentSlot.value.days.length === 0) {
-            slotErrors.value.days = 'Select at least one day';
+        if (!currentSlot.value.datetime) {
+            slotErrors.value.dates = 'Please select a date and time.';
             valid = false;
         } else {
-            const conflicts = checkExistingTimes();
-            if (conflicts.length > 0) {
-                slotErrors.value.general = `Time already exists in: ${conflicts.join(', ')}`;
+            const { date, time } = parseDateTimeLocal(currentSlot.value.datetime);
+            if (!date || !time) {
+                slotErrors.value.dates = 'Invalid date or time.';
                 valid = false;
+            }
+        }
+    } else {
+        if (!currentSlot.value.time || !currentSlot.value.tripEndTime) {
+            slotErrors.value.time = 'Departure and end times are required.';
+            valid = false;
+        } else {
+            const departureTime = currentSlot.value.time;
+            const endTime = currentSlot.value.tripEndTime;
+            if (departureTime >= endTime) {
+                slotErrors.value.time = 'Start time must be before end time.';
+                valid = false;
+            }
+        }
+        if (currentSlot.value.index === -1) {
+            if (currentSlot.value.days.length === 0) {
+                slotErrors.value.days = 'Please select at least one day.';
+                valid = false;
+            } else {
+                const conflicts = checkExistingTimes();
+                if (conflicts.length > 0) {
+                    slotErrors.value.general = `Time already exists on: ${conflicts.join(', ')}`;
+                    valid = false;
+                }
             }
         }
     }
     return valid;
 };
 const validateStep2 = () => {
-    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '' };
+    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '', queue: '' };
     let valid = true;
     currentSlot.value.rPointsTimes.forEach(rp => {
-        if (!rp.expDepTime || !rp.expArrTime) {
-            slotErrors.value.rPointsTimes = 'Please provide both Expected Departure and Expected Arrival times for all locations.';
+        if (!rp.expDepTime) {
+            slotErrors.value.rPointsTimes = 'Please provide expected departure times for all locations.';
             valid = false;
         }
     });
     return valid;
 };
 const validateStep3 = () => {
-    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '' };
+    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '', queue: '' };
+    let valid = true;
+
+    // Validate queue settings only for regular schedules
+    if (currentRoute.value.type !== 'event') {
+        if (currentSlot.value.queueOpenValue < 0 || currentSlot.value.queueCloseValue < 0) {
+            slotErrors.value.queue = 'Queue values cannot be negative.';
+            valid = false;
+        }
+    }
+    return valid;
+};
+const validateStep4 = () => {
+    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '', queue: '' };
     let valid = true;
     if (currentSlot.value.assignments.some(a => (a.driver && !a.bus) || (!a.driver && a.bus))) {
-        slotErrors.value.general = 'Select both driver and bus for each assignment or leave both empty';
+        slotErrors.value.general = 'For each assignment, select both driver and bus or leave both empty.';
         valid = false;
     }
 
-    const duplicates = new Set();
     const allDrivers = currentSlot.value.assignments.map(a => a.driver).filter(Boolean);
-    const allBuses = currentSlot.value.assignments.map(a => a.bus).filter(Boolean);
     if (new Set(allDrivers).size !== allDrivers.length) {
-        duplicates.add('drivers');
-    }
-    if (new Set(allBuses).size !== allBuses.length) {
-        duplicates.add('buses');
-    }
-    if (duplicates.size > 0) {
-        slotErrors.value.general = `Duplicate ${[...duplicates].join(' and ')} detected`;
+        slotErrors.value.general = 'Duplicate drivers detected.';
         valid = false;
     }
     return valid;
@@ -201,54 +267,137 @@ const validateStep3 = () => {
 // CRUD operations
 const saveSlot = async () => {
     try {
+        syncExpArrTimes();
+
+        if (currentRoute.value.type === 'event') {
+            if (!validateStep4()) return;
+        } else {
+            if (!validateStep4()) return;
+        }
+        // validateStep3();
+
         const routeId = route.params.id;
         const assignments = currentSlot.value.assignments || [];
         const validAssignments = assignments.filter(a => a.driver && a.bus);
-        validateStep3();
+
+        let queueOpenOffset = 0;
+        let queueCloseOffset = 0;
+        if (currentRoute.value.type !== 'event') {
+            queueOpenOffset = convertToMinutes(currentSlot.value.queueOpenValue, currentSlot.value.queueOpenUnit);
+            queueCloseOffset = convertToMinutes(currentSlot.value.queueCloseValue, currentSlot.value.queueCloseUnit);
+        }
 
         // Event
         if (currentRoute.value.type === 'event') {
-            const date = currentSlot.value.date;
-
-            if (!date) {
-                slotErrors.value.general = "Please select a date for the event.";
+            const dt = currentSlot.value.datetime;
+            if (!dt) {
+                slotErrors.value.general = "Please select date and time for the event.";
+                return;
+            }
+            const { date, time } = parseDateTimeLocal(dt);
+            if (!date || !time) {
+                slotErrors.value.general = "Invalid date or time.";
                 return;
             }
             const jsDate = new Date(date);
             const day = jsDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
 
+            const assignments = currentSlot.value.assignments || [];
+            const validAssignments = assignments.filter(a => a.driver && a.bus);
             if (currentSlot.value.isEditing && currentSlot.value.scheduleId) {
-                await updateDoc(doc(scheduleCollection, currentSlot.value.scheduleId), {
-                    date: date,
-                    time: currentSlot.value.time,
-                    driverId: validAssignments[0]?.driver || null,
-                    busId: validAssignments[0]?.bus || null,
+                const { date: origDate, time: origTime } = parseDateTimeLocal(currentSlot.value.originalDatetime || '');
+                const origDay = origDate
+                    ? new Date(origDate).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()
+                    : '';
+                const q = query(scheduleCollection,
+                    where('routeId', '==', routeId),
+                    where('type', '==', 'event'),
+                    where('day', '==', origDay),
+                    where('time', '==', origTime),
+                    where('date', '==', origDate)
+                );
+                const querySnapshot = await getDocs(q);
+                const existingDocs = new Map();
+                querySnapshot.forEach(docSnap => {
+                    existingDocs.set(docSnap.id, docSnap.ref);
                 });
+
+                const updatePromises = [];
+                const deletePromises = [];
+                for (const assignment of validAssignments) {
+                    let foundDocId = null;
+                    querySnapshot.forEach(docSnap => {
+                        const data = docSnap.data();
+                        if (data.driverId === assignment.driver && data.busId === assignment.bus) {
+                            foundDocId = docSnap.id;
+                        }
+                    });
+
+                    if (foundDocId) {
+                        updatePromises.push(
+                            updateDoc(existingDocs.get(foundDocId), {
+                                date,
+                                day,
+                                time,
+                                driverId: assignment.driver,
+                                busId: assignment.bus,
+                            })
+                        );
+                        existingDocs.delete(foundDocId);
+                    } else {
+                        const newDocRef = await addDoc(scheduleCollection, {
+                            date,
+                            day,
+                            type: 'event',
+                            routeId,
+                            time,
+                            driverId: assignment.driver,
+                            busId: assignment.bus,
+                            status: 'scheduled',
+                            created: new Date(),
+                            rpoints: currentSlot.value.rPointsTimes.map(rp => ({
+                                rpointId: rp.rpointId,
+                            })),
+                        });
+                        updatePromises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
+                    }
+                }
+                existingDocs.forEach(ref => {
+                    deletePromises.push(deleteDoc(ref));
+                });
+                await Promise.all([...updatePromises, ...deletePromises]);
             } else {
-                const newDocRef = await addDoc(scheduleCollection, {
-                    date,
-                    day,
-                    type: 'event',
-                    routeId,
-                    time: currentSlot.value.time,
-                    driverId: validAssignments[0]?.driver || null,
-                    busId: validAssignments[0]?.bus || null,
-                    status: 'scheduled',
-                    created: new Date(),
-                    rpoints: currentSlot.value.rPointsTimes.map(rp => ({
-                        rpointId: rp.rpointId,
-                    })),
-                });
-                await updateDoc(newDocRef, { scheduleId: newDocRef.id });
+                const promises = [];
+                for (const assignment of validAssignments) {
+                    const newDocRef = await addDoc(scheduleCollection, {
+                        date,
+                        day,
+                        type: 'event',
+                        routeId,
+                        time,
+                        driverId: assignment.driver,
+                        busId: assignment.bus,
+                        status: 'scheduled',
+                        created: new Date(),
+                        rpoints: currentSlot.value.rPointsTimes.map(rp => ({
+                            rpointId: rp.rpointId,
+                        })),
+                    });
+                    promises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
+                }
+                await Promise.all(promises);
             }
             closeModal();
             return;
         }
         // Regular
-        const { days: selectedDays, time, isEditing, originalTime } = currentSlot.value;
+        const { days: selectedDays, time, isEditing, originalTime, tripEndTime } = currentSlot.value;
         const type = activeTab.value;
-
-        const rPointsToSave = currentSlot.value.rPointsTimes.map(rp => ({
+        let rPointsTimesArr = [...currentSlot.value.rPointsTimes];
+        if (rPointsTimesArr.length > 0) {
+            rPointsTimesArr[rPointsTimesArr.length - 1].expArrTime = tripEndTime;
+        }
+        const rPointsToSave = rPointsTimesArr.map(rp => ({
             rpointId: rp.rpointId,
             expDepTime: rp.expDepTime,
             expArrTime: rp.expArrTime,
@@ -262,7 +411,6 @@ const saveSlot = async () => {
                 }
             )
         }));
-
         if (isEditing) {
             const originalDay = currentSlot.value.days[0].toLowerCase();
             const q = query(scheduleCollection,
@@ -276,10 +424,8 @@ const saveSlot = async () => {
             querySnapshot.forEach(doc => {
                 existingDocs.set(doc.id, doc.ref);
             });
-
             const updatePromises = [];
             const deletePromises = [];
-
             if (validAssignments.length === 0) {
                 existingDocs.forEach(ref => {
                     deletePromises.push(deleteDoc(ref));
@@ -302,6 +448,8 @@ const saveSlot = async () => {
                         actArrTime: null,
                         latenessMinutes: 0
                     })),
+                    queueOpenOffset: queueOpenOffset,
+                    queueCloseOffset: queueCloseOffset,
                 });
                 updatePromises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
             } else {
@@ -311,26 +459,30 @@ const saveSlot = async () => {
                             const docSnap = await getDoc(existingDocs.get(assignment.id));
                             const existingData = docSnap.exists() ? docSnap.data() : {};
                             const existingRPoints = Array.isArray(existingData.rpoints) ? existingData.rpoints : [];
-
                             const mergedRPoints = currentSlot.value.rPointsTimes.map(rp => {
                                 const existing = existingRPoints.find(er => er.rpointId === rp.rpointId) || {};
                                 return {
                                     rpointId: rp.rpointId,
                                     expDepTime: rp.expDepTime,
                                     expArrTime: rp.expArrTime,
-                                    status: 'scheduled',
+                                    // status: 'scheduled',
+                                    status: existing.status ?? 'scheduled',
                                     actDepTime: existing.actDepTime ?? null,
                                     actArrTime: existing.actArrTime ?? null,
                                     latenessMinutes: existing.latenessMinutes ?? 0
                                 };
                             });
-
+                            if (mergedRPoints.length > 0) {
+                                mergedRPoints[mergedRPoints.length - 1].expArrTime = tripEndTime;
+                            }
                             updatePromises.push(
                                 updateDoc(existingDocs.get(assignment.id), {
                                     time: time,
                                     driverId: assignment.driver,
                                     busId: assignment.bus,
                                     rpoints: mergedRPoints,
+                                    queueOpenOffset: queueOpenOffset,
+                                    queueCloseOffset: queueCloseOffset,
                                 })
                             );
                             existingDocs.delete(assignment.id);
@@ -354,7 +506,12 @@ const saveSlot = async () => {
                                 actArrTime: null,
                                 latenessMinutes: 0
                             })),
+                            queueOpenOffset: queueOpenOffset, 
+                            queueCloseOffset: queueCloseOffset,
                         });
+                        if (currentSlot.value.rPointsTimes.length > 0) {
+                            currentSlot.value.rPointsTimes[currentSlot.value.rPointsTimes.length - 1].expArrTime = tripEndTime;
+                        }
                         updatePromises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
                     }
                 }
@@ -378,6 +535,8 @@ const saveSlot = async () => {
                         status: 'scheduled',
                         created: new Date(),
                         rpoints: rPointsToSave,
+                        queueOpenOffset: queueOpenOffset,
+                        queueCloseOffset: queueCloseOffset,
                     });
                     promises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
                 } else {
@@ -392,6 +551,8 @@ const saveSlot = async () => {
                             status: 'scheduled',
                             created: new Date(),
                             rpoints: rPointsToSave,
+                            queueOpenOffset: queueOpenOffset,
+                            queueCloseOffset: queueCloseOffset,
                         });
                         promises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
                     }
@@ -399,7 +560,6 @@ const saveSlot = async () => {
             }
             await Promise.all(promises);
         }
-
         const refreshQ = query(scheduleCollection, where('routeId', '==', routeId));
         const refreshSnapshot = await getDocs(refreshQ);
         days.forEach(day => {
@@ -414,21 +574,39 @@ const saveSlot = async () => {
         closeModal();
     } catch (error) {
         console.error("Save error:", error);
-        slotErrors.value.general = "Failed to save. Please check your data.";
+        slotErrors.value.general = "Failed to save schedule. Try again.";
     }
 };
 const deleteSlot = async () => {
     try {
         const routeId = route.params.id;
-        const type = activeTab.value;
-        const day = currentSlot.value.days[0].toLowerCase();
-        const time = currentSlot.value.originalTime;
+        const type = currentRoute.value.type === 'event' ? 'event' : activeTab.value;
+        let day, time, date;
 
-        const q = query(scheduleCollection,
+        if (currentRoute.value.type === 'event') {
+            const dt = currentSlot.value.datetime;
+            if (!dt) {
+                slotErrors.value.general = "No date/time selected for event.";
+                return;
+            }
+            ({ date, time } = parseDateTimeLocal(dt));
+            if (!date || !time) {
+                slotErrors.value.general = "Invalid date or time.";
+                return;
+            }
+            const jsDate = new Date(date);
+            day = jsDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+        } else {
+            day = currentSlot.value.days[0]?.toLowerCase();
+            time = currentSlot.value.originalTime || currentSlot.value.time;
+        }
+        const q = query(
+            scheduleCollection,
             where('routeId', '==', routeId),
             where('type', '==', type),
             where('day', '==', day),
-            where('time', '==', time)
+            where('time', '==', time),
+            ...(currentRoute.value.type === 'event' && date ? [where('date', '==', date)] : [])
         );
         const querySnapshot = await getDocs(q);
         const deletePromises = [];
@@ -436,13 +614,14 @@ const deleteSlot = async () => {
             deletePromises.push(deleteDoc(doc.ref));
         });
         await Promise.all(deletePromises);
-        schedule.value[day][type] = schedule.value[day][type].filter(s => s.time !== time);
-
+        if (schedule.value[day] && schedule.value[day][type]) {
+            schedule.value[day][type] = schedule.value[day][type].filter(s => s.time !== time);
+        }
         closeModal();
         showDeleteModal.value = false;
     } catch (error) {
         console.error("Delete error:", error);
-        slotErrors.value.general = "Failed to delete. Please try again.";
+        slotErrors.value.general = "Failed to delete schedule. Try again.";
     }
 };
 
@@ -456,7 +635,6 @@ const openModal = async (initialDay, time = '') => {
     const lowerDay = initialDay.toLowerCase();
     const routeId = route.params.id;
     const type = activeTab.value;
-
     if (time) {
         const q = query(
             scheduleCollection,
@@ -466,10 +644,11 @@ const openModal = async (initialDay, time = '') => {
             where('time', '==', time)
         );
         const querySnapshot = await getDocs(q);
-
         let assignmentsData = [];
         let rPointsTimesData = [];
-
+        let tripEndTimeData = '';
+        let queueOpenOffsetData = 0; 
+        let queueCloseOffsetData = 0;
         if (!querySnapshot.empty) {
             const firstDocData = querySnapshot.docs[0].data();
             assignmentsData = querySnapshot.docs.map(doc => ({
@@ -477,7 +656,6 @@ const openModal = async (initialDay, time = '') => {
                 driver: doc.data().driverId,
                 bus: doc.data().busId
             }));
-
             if (firstDocData.rpoints && firstDocData.rpoints.length > 0) {
                 rPointsTimesData = firstDocData.rpoints.map(rp => {
                     const rPoint = rpoints.value.find(globalRp => globalRp.id === rp.rpointId);
@@ -488,6 +666,9 @@ const openModal = async (initialDay, time = '') => {
                         expArrTime: rp.expArrTime || ''
                     };
                 });
+                if (rPointsTimesData.length > 0) {
+                    tripEndTimeData = rPointsTimesData[rPointsTimesData.length - 1].expArrTime || '';
+                }
             } else {
                 rPointsTimesData = currentRoute.value.rpoints.map(rpointId => {
                     const rPoint = rpoints.value.find(rp => rp.id === rpointId);
@@ -499,9 +680,17 @@ const openModal = async (initialDay, time = '') => {
                     };
                 });
             }
+            if (currentRoute.value.type !== 'event') {
+                queueOpenOffsetData = firstDocData.queueOpenOffset ?? convertToMinutes(1, 'day'); // Default if not found
+                queueCloseOffsetData = firstDocData.queueCloseOffset ?? convertToMinutes(15, 'minute'); // Default if not found
+            }
         } else {
             assignmentsData = [{ driver: '', bus: '' }];
-            rPointsTimesData = currentRoute.value.rpoints.map(rpointId => {
+            let routeRPointIds = currentRoute.value.rpoints || [];
+            if (type === 'outcampus') {
+                routeRPointIds = [...routeRPointIds].reverse();
+            }
+            rPointsTimesData = routeRPointIds.map(rpointId => {
                 const rPoint = rpoints.value.find(rp => rp.id === rpointId);
                 return {
                     rpointId,
@@ -510,22 +699,73 @@ const openModal = async (initialDay, time = '') => {
                     expArrTime: ''
                 };
             });
+            queueOpenOffsetData = convertToMinutes(1, 'day');
+            queueCloseOffsetData = convertToMinutes(15, 'minute');
         }
-
+        // Event
         if (currentRoute.value.type === 'event') {
-            const slotData = eventScheduleRows.value
-                .find(row => row.time === time)
-                ?.byDay[initialDay.toLowerCase()];
-
+            const q = query(
+                scheduleCollection,
+                where('routeId', '==', routeId),
+                where('type', '==', 'event'),
+                where('day', '==', lowerDay),
+                where('time', '==', time)
+            );
+            const querySnapshot = await getDocs(q);
+            let assignmentsData = [];
+            let rPointsTimesData = [];
+            if (!querySnapshot.empty) {
+                const firstDocData = querySnapshot.docs[0].data();
+                assignmentsData = querySnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    driver: doc.data().driverId,
+                    bus: doc.data().busId
+                }));
+                if (firstDocData.rpoints && firstDocData.rpoints.length > 0) {
+                    rPointsTimesData = firstDocData.rpoints.map(rp => {
+                        const rPoint = rpoints.value.find(globalRp => globalRp.id === rp.rpointId);
+                        return {
+                            rpointId: rp.rpointId,
+                            name: rPoint ? rPoint.name : 'Unknown',
+                            expDepTime: rp.expDepTime || '',
+                            expArrTime: rp.expArrTime || ''
+                        };
+                    });
+                } else {
+                    rPointsTimesData = currentRoute.value.rpoints.map(rpointId => {
+                        const rPoint = rpoints.value.find(rp => rp.id === rpointId);
+                        return {
+                            rpointId,
+                            name: rPoint ? rPoint.name : 'Unknown',
+                            expDepTime: '',
+                            expArrTime: ''
+                        };
+                    });
+                }
+            } else {
+                assignmentsData = [{ driver: '', bus: '' }];
+                rPointsTimesData = currentRoute.value.rpoints.map(rpointId => {
+                    const rPoint = rpoints.value.find(rp => rp.id === rpointId);
+                    return {
+                        rpointId,
+                        name: rPoint ? rPoint.name : 'Unknown',
+                        expDepTime: '',
+                        expArrTime: ''
+                    };
+                });
+            }
             currentSlot.value = {
-                date: slotData?.date || '',
-                time: time,
-                assignments: [{ driver: '', bus: '' }],
-                isEditing: !!slotData,
-                rPointsTimes: [],
-                scheduleId: slotData?.id || ''
+                datetime: toDateTimeLocal(querySnapshot.docs[0]?.data().date, querySnapshot.docs[0]?.data().time) || '',
+                originalDatetime: toDateTimeLocal(querySnapshot.docs[0]?.data().date, querySnapshot.docs[0]?.data().time) || '',
+                assignments: assignmentsData,
+                isEditing: !querySnapshot.empty,
+                rPointsTimes: rPointsTimesData,
+                scheduleId: querySnapshot.docs[0]?.id || ''
             };
         } else {
+            const { value: openValue, unit: openUnit } = convertFromMinutes(queueOpenOffsetData, 'day');
+            const { value: closeValue, unit: closeUnit } = convertFromMinutes(queueCloseOffsetData, 'minute');
+
             currentSlot.value = {
                 days: [initialDay],
                 originalDays: [initialDay],
@@ -533,13 +773,23 @@ const openModal = async (initialDay, time = '') => {
                 time: time,
                 initialDay: initialDay,
                 assignments: assignmentsData,
-                isEditing: true,
-                rPointsTimes: rPointsTimesData
+                isEditing: !!time,
+                rPointsTimes: rPointsTimesData,
+                tripEndTime: tripEndTimeData,
+                queueOpenValue: openValue,
+                queueOpenUnit: openUnit,
+                queueCloseValue: closeValue,
+                queueCloseUnit: closeUnit,
+                queueOpenOffset: queueOpenOffsetData,
+                queueCloseOffset: queueCloseOffsetData,
             };
         }
     } else {
-        const routeRPointIds = currentRoute.value.rpoints || [];
-        const initializedRPointsTimes = routeRPointIds.map(rpointId => {
+        let routeRPointIds = currentRoute.value.rpoints || [];
+        if (type === 'outcampus') {
+            routeRPointIds = [...routeRPointIds].reverse();
+        }
+        let initializedRPointsTimes = routeRPointIds.map(rpointId => {
             const rPoint = rpoints.value.find(rp => rp.id === rpointId);
             return {
                 rpointId,
@@ -548,16 +798,22 @@ const openModal = async (initialDay, time = '') => {
                 expArrTime: ''
             };
         });
-
         currentSlot.value = {
             days: [initialDay],
             originalDays: [],
             index: -1,
             time: '',
+            tripEndTime: '',
             assignments: [{ driver: '', bus: '' }],
             initialDay,
             isEditing: false,
-            rPointsTimes: initializedRPointsTimes
+            rPointsTimes: initializedRPointsTimes,
+            queueOpenValue: 1,
+            queueOpenUnit: 'day',
+            queueCloseValue: 15,
+            queueCloseUnit: 'minute',
+            queueOpenOffset: convertToMinutes(1, 'day'),
+            queueCloseOffset: convertToMinutes(15, 'minute'),
         };
     }
     currentStep.value = 1;
@@ -574,10 +830,8 @@ const openModalForEvent = () => {
             expArrTime: ''
         };
     });
-
     currentSlot.value = {
-        date: '',
-        time: '',
+        datetime: '',
         assignments: [{ driver: '', bus: '' }],
         isEditing: false,
         rPointsTimes: initializedRPointsTimes,
@@ -586,7 +840,6 @@ const openModalForEvent = () => {
         index: -1,
         initialDay: null
     };
-
     currentStep.value = 1;
     showSlotModal.value = true;
 };
@@ -597,11 +850,18 @@ const closeModal = () => {
         originalDays: [],
         index: -1,
         time: '',
+        tripEndTime: '',
         assignments: [{ driver: '', bus: '' }],
         initialDay: null,
-        rPointsTimes: [] 
+        rPointsTimes: [],
+        queueOpenValue: 1,
+        queueOpenUnit: 'day',
+        queueCloseValue: 15,
+        queueCloseUnit: 'minute',
+        queueOpenOffset: 0,
+        queueCloseOffset: 0,
     };
-    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '' }; 
+    slotErrors.value = { time: '', days: '', general: '', rPointsTimes: '', queue: '' }; 
     currentStep.value = 1;
 };
 const addAssignment = () =>
@@ -618,19 +878,26 @@ const nextStep = () => {
     if (currentStep.value === 1) {
         if (!validateStep1()) return;
         if (currentRoute.value.type === 'event') {
-            currentStep.value = 3;
+            currentStep.value = 4;
             return;
         }
     } else if (currentStep.value === 2) {
         if (!validateStep2()) return;
+    } else if (currentStep.value === 3 && currentRoute.value.type !== 'event') {
+        if (!validateStep3()) return;
     }
     currentStep.value++;
 };
 const prevStep = () => {
-    if (currentStep.value === 3 && currentRoute.value.type === 'event') {
+    if (currentStep.value === 4 && currentRoute.value.type === 'event') {
         currentStep.value = 1;
     } else {
         currentStep.value--;
+    }
+};
+const onExpDepTimeInput = (idx) => {
+    if (idx > 0) {
+        currentSlot.value.rPointsTimes[idx - 1].expArrTime = currentSlot.value.rPointsTimes[idx].expDepTime;
     }
 };
 
@@ -639,18 +906,13 @@ const prevStep = () => {
 const usedDrivers = computed(() => {
     return new Set(currentSlot.value.assignments.map(a => a.driver).filter(Boolean));
 });
-const usedBuses = computed(() => {
-    return new Set(currentSlot.value.assignments.map(a => a.bus).filter(Boolean));
-});
 const availableDrivers = (currentAssignment) => {
     return drivers.value.filter(driver =>
         !usedDrivers.value.has(driver.id) || driver.id === currentAssignment.driver
     );
 };
-const availableBuses = (currentAssignment) => {
-    return buses.value.filter(bus =>
-        !usedBuses.value.has(bus.id) || bus.id === currentAssignment.bus
-    );
+const availableBuses = () => {
+    return buses.value;
 };
 const eventScheduleRows = computed(() => {
     if (currentRoute.value.type !== 'event') return [];
@@ -658,15 +920,26 @@ const eventScheduleRows = computed(() => {
     days.forEach(day => {
         const dayKey = day.toLowerCase();
         const eventSlots = schedule.value[dayKey]?.event || [];
+        const grouped = {};
         eventSlots.forEach(slot => {
-            allEventSlots.push({
-                time: slot.time,
-                day: dayKey,
-                date: slot.date,
-                drivers: slot.driverId ? 1 : 0,
-                buses: slot.busId ? 1 : 0,
-                id: slot.id 
-            });
+            const key = `${slot.time}|${slot.date}`;
+            if (!grouped[key]) {
+                grouped[key] = {
+                    time: slot.time,
+                    day: dayKey,
+                    date: slot.date,
+                    drivers: 0,
+                    buses: 0,
+                    id: slot.id,
+                    count: 0
+                };
+            }
+            grouped[key].drivers += slot.driverId ? 1 : 0;
+            grouped[key].buses += slot.busId ? 1 : 0;
+            grouped[key].count += 1;
+        });
+        Object.values(grouped).forEach(slot => {
+            allEventSlots.push(slot);
         });
     });
     // Group by time
@@ -684,11 +957,24 @@ const eventScheduleRows = computed(() => {
     });
     return Object.values(timeMap).sort((a, b) => a.time.localeCompare(b.time));
 });
+function parseDateTimeLocal(dtStr) {
+    // dtStr: "2025-06-19T22:57"
+    if (!dtStr) return { date: '', time: '' };
+    const [date, time] = dtStr.split('T');
+    return { date, time };
+}
+function toDateTimeLocal(date, time) {
+    // date: "2025-06-19", time: "22:57"
+    if (!date || !time) return '';
+    return `${date}T${time}`;
+}
 
 
 // Watchers
 watch(() => currentSlot.value.time, () => slotErrors.value.time = '');
 watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: true });
+watch(() => currentSlot.value.queueOpenValue, () => slotErrors.value.queue = '');
+watch(() => currentSlot.value.queueCloseValue, () => slotErrors.value.queue = '');
 </script>
 
 <template>
@@ -746,28 +1032,6 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                                 </th>
                             </tr>
                         </thead>
-                        <!-- <tbody>
-                            <tr v-for="time in getAllTimes()" :key="time">
-                                <td class="text-sm">{{ time }}</td>
-                                <td v-for="day in days" :key="day" class="text-truncate">
-                                    <template v-if="getSlotIndex(day, time) !== -1">
-                                        <button class="btn btn-light mb-0 px-3 py-2" @click="openModal(day, time)">
-                                            <span class="badge text-dark me-2">
-                                                <i class="fas fa-user me-1"></i>
-                                                {{ getCounts(day, time).drivers }}
-                                            </span>
-                                            <span class="badge text-dark">
-                                                <i class="fas fa-bus me-1"></i>
-                                                {{ getCounts(day, time).buses }}
-                                            </span>
-                                        </button>
-                                    </template>
-                                    <template v-else>
-                                        &nbsp;
-                                    </template>
-                                </td>
-                            </tr>
-                        </tbody> -->
                         <tbody v-if="currentRoute.type !== 'event'">
                             <tr v-for="time in getAllTimes()" :key="time">
                                 <td class="text-sm">{{ time }}</td>
@@ -827,43 +1091,38 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
 
         <!-- Slot Modal -->
         <div v-if="showSlotModal" class="modal fade show d-block">
-            <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title">
                             {{ currentSlot.isEditing ? 'Edit Time Slot' : 'Add Time Slot' }}
                             <span v-if="currentSlot.isEditing" class="text-muted text-sm">
-                                ({{ capitalize(currentSlot.initialDay) }} - {{ activeTab === 'incampus' ? 'In Campus' :
-                                'Out Campus'
-                                }})
+                                <template v-if="currentRoute.type === 'event'">
+                                    (Event)
+                                </template>
+                                <template v-else>
+                                    ({{ capitalize(currentSlot.initialDay) }} - {{ activeTab === 'incampus' ? 'In Campus' : 'Out Campus' }})
+                                </template>
                             </span>
                         </h5>
                         <button type="button" class="btn-close" @click="closeModal"></button>
                     </div>
                     <div class="modal-body">
                         <div v-if="currentStep === 1">
-                            <div class="mb-3">
-                                <label class="form-label">Slot Start Time</label>
-                                <argon-input type="time" v-model="currentSlot.time" required />
-                                <div v-if="slotErrors.time" class="text-danger text-sm mt-1">{{ slotErrors.time }}</div>
-                            </div>
-
                             <div v-if="currentRoute.type === 'event'" class="mb-3">
                                 <label class="form-label">Event Date(s)</label>
-                                <!-- <Datepicker v-model="currentSlot.dates" :multi-dates="true" :min-date="new Date()" /> -->
-
-                                <input type="date" class="form-control" v-model="currentSlot.date"
-                                    :min="new Date().toISOString().split('T')[0]" />
+                                <input type="datetime-local" class="form-control" v-model="currentSlot.datetime"
+                                    :min="new Date().toISOString().slice(0, 16)" />
                                 <div v-if="slotErrors.dates" class="text-danger text-sm mt-1">{{ slotErrors.dates }}
                                 </div>
                             </div>
 
-                            <div v-if="!currentSlot.isEditing && currentRoute.type !== 'event'" class="mb-3">
-                                <div v-if="!currentSlot.isEditing">
+                            <div v-else>
+                                <div v-if="!currentSlot.isEditing" class="mb-3">
                                     <label class="form-label">Day (s)</label>
-                                    <div class="d-flex flex-wrap gap-3">
+                                    <div class="row">
                                         <div v-for="day in days" :key="day"
-                                            class="form-check d-flex align-items-center">
+                                            class="form-check d-flex align-items-center mb-2">
                                             <argon-checkbox :id="`day-${day}`" v-model="currentSlot.days"
                                                 :value="day" />
                                             <label :for="`day-${day}`" class="form-check-label ms-2 mb-0">
@@ -874,9 +1133,19 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                                     <div v-if="slotErrors.days" class="text-danger text-sm mt-1">
                                         {{ slotErrors.days }}
                                     </div>
+                                    <div v-if="slotErrors.general" class="text-danger text-sm mt-1">
+                                        {{ slotErrors.general }}
+                                    </div>
                                 </div>
-                                <div v-if="slotErrors.general" class="text-danger text-sm mt-1">
-                                    {{ slotErrors.general }}
+
+                                <div class="mb-3">
+                                    <label class="form-label">Trip Departure Time</label>
+                                    <argon-input type="time" v-model="currentSlot.time" required />
+
+                                    <label class="form-label">Trip End Time</label>
+                                    <argon-input type="time" v-model="currentSlot.tripEndTime" required />
+                                    <div v-if="slotErrors.time" class="text-danger text-sm mt-1">{{ slotErrors.time }}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -895,15 +1164,7 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                                                     Departure Time</label>
                                                 <ArgonInput :id="`expDepTime-${rPoint.rpointId}`"
                                                     v-model="currentSlot.rPointsTimes[idx].expDepTime" type="time"
-                                                    placeholder="Departure Time" />
-                                            </div>
-                                            <div class="col-md-6 mb-2">
-                                                <label :for="`expArrTime-${rPoint.rpointId}`"
-                                                    class="form-label text-sm">Expected
-                                                    Arrival Time</label>
-                                                <ArgonInput :id="`expArrTime-${rPoint.rpointId}`"
-                                                    v-model="currentSlot.rPointsTimes[idx].expArrTime" type="time"
-                                                    placeholder="Arrival Time" />
+                                                    placeholder="Departure Time" @input="onExpDepTimeInput(idx)" />
                                             </div>
                                         </div>
                                     </div>
@@ -915,9 +1176,51 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                             </div>
                         </div>
 
-                        <div v-if="currentStep === 3">
+                        <div v-if="currentStep === 3 && currentRoute.type !== 'event'">
                             <div class="mb-3">
-                                <label class="form-label">Assignment</label>
+                                <label class="form-label">Queue Open</label>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="col-3">
+                                        <argon-input type="number" v-model.number="currentSlot.queueOpenValue" min="0"
+                                            class="mb-0" />
+                                    </div>
+                                    <div class="col-4">
+                                        <select class="form-select" v-model="currentSlot.queueOpenUnit">
+                                            <option v-for="unit in unitOptions" :key="unit" :value="unit">{{
+                                                capitalize(unit) }} (s)</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-5">
+                                        <span class="text-muted text-sm">before trip departure</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Queue Close</label>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="col-3">
+                                        <argon-input type="number" v-model.number="currentSlot.queueCloseValue" min="0"
+                                            class="mb-0" />
+                                    </div>
+                                    <div class="col-4">
+                                        <select class="form-select" v-model="currentSlot.queueCloseUnit">
+                                            <option v-for="unit in unitOptions" :key="unit" :value="unit">{{
+                                                capitalize(unit) }} (s)</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-5">
+                                        <span class="text-muted text-sm">before trip departure</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-if="slotErrors.queue" class="text-danger text-sm mt-1">
+                                {{ slotErrors.queue }}
+                            </div>
+                        </div>
+
+                        <div v-if="currentStep === 4 || (currentStep === 3 && currentRoute.type === 'event')">
+                            <div class="mb-3">
+                                <label class="form-label">Assignments</label>
                                 <div v-for="(assignment, idx) in currentSlot.assignments" :key="idx"
                                     class="d-flex mb-3 align-items-center gap-2">
 
@@ -928,7 +1231,8 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                                         }">
                                         <option value="">Select Driver</option>
                                         <option v-for="d in availableDrivers(assignment)" :key="d.id" :value="d.id"
-                                            :disabled="usedDrivers.has(d.id) && d.id !== assignment.driver">{{ d.name }}
+                                            :disabled="usedDrivers.has(d.id) && d.id !== assignment.driver">{{
+                                            d.name }}
                                         </option>
                                     </select>
 
@@ -938,8 +1242,9 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                                                 (!assignment.bus && assignment.driver)
                                         }">
                                         <option value="">Select Bus</option>
-                                        <option v-for="b in availableBuses(assignment)" :key="b.id" :value="b.id"
-                                            :disabled="usedBuses.has(b.id) && b.id !== assignment.bus">{{ b.licensePlate
+
+                                        <option v-for="b in availableBuses()" :key="b.id" :value="b.id">{{
+                                            b.plateNumber
                                             }}
                                         </option>
                                     </select>
@@ -953,7 +1258,7 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                             <argon-button color="primary" class="btn-sm" @click="addAssignment">
                                 <i class="fas fa-plus me-1"></i> Add Assignment
                             </argon-button>
-                            <div v-if="slotErrors.general" class="text-danger text-sm text-sm mt-3">
+                            <div v-if="slotErrors.general" class="text-danger text-sm mt-3">
                                 {{ slotErrors.general }}
                             </div>
                         </div>
@@ -965,8 +1270,10 @@ watch(() => currentSlot.value.days, () => slotErrors.value.days = '', { deep: tr
                         </argon-button>
                         <argon-button color="secondary" @click="closeModal">Cancel</argon-button>
                         <argon-button color="secondary" @click="prevStep" v-if="currentStep > 1">Back</argon-button>
-                        <argon-button color="primary" @click="nextStep" v-if="currentStep < 3">Next</argon-button>
-                        <argon-button color="primary" @click="saveSlot" v-if="currentStep === 3">Save</argon-button>
+                        <argon-button color="primary" @click="nextStep"
+                            v-if="(currentRoute.type === 'event' && currentStep < 4) || (currentRoute.type !== 'event' && currentStep < 4)">Next</argon-button>
+                        <argon-button color="primary" @click="saveSlot"
+                            v-if="(currentRoute.type === 'event' && currentStep === 4) || (currentRoute.type !== 'event' && currentStep === 4)">Save</argon-button>
                     </div>
                 </div>
             </div>

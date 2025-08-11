@@ -1,7 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { deleteDoc, updateDoc, setDoc, onSnapshot, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import { driverCollection } from '@/firebase';
+import { driverCollection, busCollection, busDriverPairingCollection } from '@/firebase';
+import BusDriverPairingTable from '@/views/components/BusDriverPairingTable.vue';
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
 import bcrypt from 'bcryptjs';
@@ -9,6 +10,8 @@ import bcrypt from 'bcryptjs';
 
 // Reactive state
 const drivers = ref([]);
+const buses = ref([]);
+const busDriverPairings = ref([]);
 const showPassword = ref(false);
 const showAddDriverModal = ref(false);
 const showDeleteModal = ref(false);
@@ -32,13 +35,13 @@ const statusDisplay = {
     },
     on_duty: {
         label: "On Duty",
-        color: "bg-gradient-primary",
+        color: "bg-gradient-warning",
         icon: "fas fa-route",
         tooltip: "Driver is currently working"
     },
     rest: {
         label: "Rest",
-        color: "bg-gradient-warning",
+        color: "bg-gradient-primary",
         icon: "fas fa-coffee",
         tooltip: "Driver is on a break"
     },
@@ -49,17 +52,29 @@ const statusDisplay = {
         tooltip: "Driver is off for the day"
     }
 };
+const showPairingModal = ref(false);
 
 
 // Lifecycle hooks
 onMounted(() => {
-    const unsubscribe = onSnapshot(driverCollection, (snapshot) => {
+    const unsubscribeDrivers = onSnapshot(driverCollection, (snapshot) => {
         drivers.value = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
         }));
     });
-    return () => unsubscribe();
+    const unsubscribeBuses = onSnapshot(busCollection, (snapshot) => {
+        buses.value = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+    });
+
+    fetchPairings();
+    return () => {
+        unsubscribeDrivers();
+        unsubscribeBuses();
+    };
 });
 
 
@@ -73,7 +88,7 @@ function createDefaultDriver() {
         licenseNumber: "",
         password: "",
         confirmPassword: "",
-        status: "active",
+        status: "available",
         originalEmail: ""
     };
 }
@@ -83,14 +98,9 @@ async function checkExistingEmail() {
     if (snapshot.empty) {
         return false;
     }
-
-    // If editing, make sure it's not the same driver being edited
     if (editingDriver.value) {
-        // Check if any document is not the same as current driver's ID
         return snapshot.docs.some(doc => doc.id !== currentDriver.value.id);
     }
-
-    // If adding a new driver, any match is a duplicate
     return true;
 };
 async function checkExistingLicense() {
@@ -99,14 +109,9 @@ async function checkExistingLicense() {
     if (snapshot.empty) {
         return false;
     }
-
-    // If editing, make sure it's not the same driver being edited
     if (editingDriver.value) {
-        // Check if any document is not the same as current driver's ID
         return snapshot.docs.some(doc => doc.id !== currentDriver.value.id);
     }
-
-    // If adding a new driver, any match is a duplicate
     return true;
 };
 
@@ -182,7 +187,6 @@ const validateConfirmPassword = () => {
             ? ''
             : 'Passwords do not match';
 };
-
 async function validateForm() {
     validateName();
     await validateEmail();
@@ -200,8 +204,6 @@ async function validateForm() {
 async function createDriver() {
     const salt = await bcrypt.genSalt(10);
     let hashedPassword = await bcrypt.hash(currentDriver.value.password, salt);
-
-    // Convert $2b to $2a
     if (hashedPassword.startsWith('$2b$')) {
         hashedPassword = '$2a' + hashedPassword.substring(3);
     }
@@ -223,11 +225,8 @@ async function updateDriver() {
     const updates = {
         name: currentDriver.value.name,
         phone: currentDriver.value.phone,
-        licenseNumber: currentDriver.value.licenseNumber,
-        status: currentDriver.value.status
+        licenseNumber: currentDriver.value.licenseNumber
     };
-
-    // Add email to updates if it changed
     if (currentDriver.value.email !== currentDriver.value.originalEmail) {
         updates.email = currentDriver.value.email;
     }
@@ -240,8 +239,6 @@ async function deleteDriver() {
         if (!driverSnapshot.exists()) {
             throw new Error('Driver not found');
         }
-
-        // Delete from Firestore
         await deleteDoc(driverDocRef);
         showDeleteModal.value = false;
     } catch (error) {
@@ -249,6 +246,16 @@ async function deleteDriver() {
         errors.value.general = error.message;
     }
 };
+const fetchPairings = async () => {
+    try {
+        const q = query(busDriverPairingCollection);
+        const snapshot = await getDocs(q);
+        busDriverPairings.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (error) {
+        console.error("Error fetching pairings:", error);
+    }
+};
+
 
 // UI handlers
 const addDriver = () => {
@@ -320,9 +327,14 @@ const formatPhoneInput = (event) => {
                     <div class="card-header pb-0">
                         <div class="d-flex justify-content-between align-items-center">
                             <h6>Driver List</h6>
-                            <argon-button color="success" size="sm" @click="addDriver">
-                                <i class="ni ni-fat-add"></i> Add Driver
-                            </argon-button>
+                            <div>
+                                <argon-button color="info" size="sm" @click="showPairingModal = true" class="me-2">
+                                    <i class="fas fa-link"></i> View Pairings
+                                </argon-button>
+                                <argon-button color="success" size="sm" @click="addDriver">
+                                    <i class="ni ni-fat-add"></i> Add Driver
+                                </argon-button>
+                            </div>
                         </div>
                     </div>
                     <div class="card-body pt-0 pb-2">
@@ -477,13 +489,6 @@ const formatPhoneInput = (event) => {
                                                 errors.confirmPassword }}</div>
                                         </div>
 
-                                        <div class="mb-3">
-                                            <label class="form-label">Status</label>
-                                            <select v-model="currentDriver.status" class="form-select" required>
-                                                <option value="active">Active</option>
-                                                <option value="inactive">Inactive</option>
-                                            </select>
-                                        </div>
                                         <div v-if="errors.general" class="text-danger text-sm text-sm mt-2">
                                             {{ errors.general }}
                                         </div>
@@ -523,6 +528,24 @@ const formatPhoneInput = (event) => {
                         </div>
                     </div>
                     <div class="modal-backdrop fade show" v-if="showDeleteModal"></div>
+
+                    <!-- Bus Driver Pairing Modal -->
+                    <div class="modal fade" :class="{ 'show d-block': showPairingModal }" tabindex="-1" role="dialog"
+                        v-if="showPairingModal">
+                        <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Bus-Driver Pairings</h5>
+                                    <button type="button" class="btn-close" @click="showPairingModal = false"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <BusDriverPairingTable :pairings="busDriverPairings" :buses="buses"
+                                        :drivers="drivers" @update-pairings="fetchPairings" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-backdrop fade show" v-if="showPairingModal"></div>
                 </div>
             </div>
         </div>

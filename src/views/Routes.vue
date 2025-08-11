@@ -627,7 +627,7 @@ watch(editingRoute, (newValue) => {
                                             <div v-if="errors.general" class="text-danger text-sm text-sm mt-2">
                                                 {{ errors.general }}
                                             </div>
-                                            <div class="d-flex justify-content-end gap-3 mt-4">
+                                            <div class="d-flex justify-content-end gap-3 mt-2">
                                                 <argon-button type="button" color="secondary" @click="closeModal">
                                                     Cancel
                                                 </argon-button>
