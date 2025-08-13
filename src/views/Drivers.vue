@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { deleteDoc, updateDoc, setDoc, onSnapshot, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { driverCollection, busCollection, busDriverPairingCollection } from '@/firebase';
 import BusDriverPairingTable from '@/views/components/BusDriverPairingTable.vue';
@@ -8,24 +8,7 @@ import ArgonInput from "@/components/ArgonInput.vue";
 import bcrypt from 'bcryptjs';
 
 
-// Reactive state
-const drivers = ref([]);
-const buses = ref([]);
-const busDriverPairings = ref([]);
-const showPassword = ref(false);
-const showAddDriverModal = ref(false);
-const showDeleteModal = ref(false);
-const editingDriver = ref(false);
-const currentDriver = ref(createDefaultDriver());
-const driverToDelete = ref(null);
-const errors = ref({
-    name: '',
-    email: '',
-    phone: '',
-    licenseNumber: '',
-    password: '',
-    confirmPassword: ''
-});
+// Constant
 const statusDisplay = {
     available: {
         label: "Available",
@@ -39,20 +22,38 @@ const statusDisplay = {
         icon: "fas fa-route",
         tooltip: "Driver is currently working"
     },
-    rest: {
-        label: "Rest",
-        color: "bg-gradient-primary",
-        icon: "fas fa-coffee",
-        tooltip: "Driver is on a break"
-    },
     off_duty: {
         label: "Off Duty",
         color: "bg-gradient-secondary",
         icon: "fas fa-power-off",
         tooltip: "Driver is off for the day"
+    },
+    inactive: {
+        label: "Inactive",
+        color: "bg-white border border-secondary",
+        icon: "",
+        tooltip: "Driver is inactive",
+        textClass: "text-secondary font-italic"
     }
 };
+// Reactive state
+const drivers = ref([]);
+const buses = ref([]);
+const busDriverPairings = ref([]);
+const showPassword = ref(false);
+const showAddDriverModal = ref(false);
+const showDeleteModal = ref(false);
 const showPairingModal = ref(false);
+const editingDriver = ref(false);
+const currentDriver = ref(createDefaultDriver());
+const isDriverPaired = ref(false);
+const driverToDelete = ref(null);
+const sortColumn = ref('name');
+const sortDirection = ref('asc');
+const currentPage = ref(1);
+const itemsPerPage = ref(10);
+// Error state
+const errors = ref({ name: '', email: '', phone: '', licenseNumber: '', password: '', confirmPassword: '' });
 
 
 // Lifecycle hooks
@@ -69,12 +70,69 @@ onMounted(() => {
             ...doc.data()
         }));
     });
-
     fetchPairings();
     return () => {
         unsubscribeDrivers();
         unsubscribeBuses();
     };
+});
+
+
+// Computed properties
+const sortedDrivers = computed(() => {
+    if (!sortColumn.value) return drivers.value;
+    return [...drivers.value].sort((a, b) => {
+        let valA = a[sortColumn.value];
+        let valB = b[sortColumn.value];
+        if (typeof valA === 'string') valA = valA.toLowerCase();
+        if (typeof valB === 'string') valB = valB.toLowerCase();
+        if (valA < valB) return sortDirection.value === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
+const paginatedDrivers = computed(() => {
+    const start = (currentPage.value - 1) * itemsPerPage.value;
+    const end = start + itemsPerPage.value;
+    return sortedDrivers.value.slice(start, end);
+});
+const totalItems = computed(() => sortedDrivers.value.length);
+const totalPages = computed(() => Math.ceil(totalItems.value / itemsPerPage.value));
+const showingFrom = computed(() => (currentPage.value - 1) * itemsPerPage.value + 1);
+const showingTo = computed(() => {
+    const to = currentPage.value * itemsPerPage.value;
+    return to > totalItems.value ? totalItems.value : to;
+});
+const showLeftEllipsis = computed(() => {
+    return currentPage.value > 3 && totalPages.value > 5;
+});
+const showRightEllipsis = computed(() => {
+    return currentPage.value < totalPages.value - 2 && totalPages.value > 5;
+});
+const visiblePages = computed(() => {
+    const pages = [];
+    const maxVisible = 3;
+
+    if (totalPages.value <= maxVisible) {
+        for (let i = 1; i <= totalPages.value; i++) {
+            pages.push(i);
+        }
+    } else {
+        let start = Math.max(1, currentPage.value - 1);
+        let end = Math.min(totalPages.value, currentPage.value + 1);
+
+        if (currentPage.value <= 2) {
+            end = maxVisible;
+        } else if (currentPage.value >= totalPages.value - 1) {
+            start = totalPages.value - maxVisible + 1;
+        }
+
+        for (let i = start; i <= end; i++) {
+            pages.push(i);
+        }
+    }
+
+    return pages;
 });
 
 
@@ -113,6 +171,27 @@ async function checkExistingLicense() {
         return snapshot.docs.some(doc => doc.id !== currentDriver.value.id);
     }
     return true;
+};
+const handleSort = (column) => {
+    if (column === sortColumn.value) {
+        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortColumn.value = column;
+        sortDirection.value = 'asc';
+    }
+    currentPage.value = 1;
+};
+const formatLicenseInput = (event) => {
+    currentDriver.value.licenseNumber = event.target.value
+        .replace(/[^A-Za-z0-9]/g, '')
+        .slice(0, 8);
+    validateLicense();
+};
+const formatPhoneInput = (event) => {
+    currentDriver.value.phone = event.target.value
+        .replace(/\D/g, '')
+        .slice(0, 11);
+    validatePhone();
 };
 
 
@@ -232,17 +311,24 @@ async function updateDriver() {
     }
     await updateDoc(driverDocRef, updates);
 }
-async function deleteDriver() {
+const deleteOrDeactivateDriverAction = async () => {
     try {
-        const driverDocRef = doc(driverCollection, driverToDelete.value);
-        const driverSnapshot = await getDoc(driverDocRef);
-        if (!driverSnapshot.exists()) {
-            throw new Error('Driver not found');
+        if (isDriverPaired.value) {
+            const driverDocRef = doc(driverCollection, driverToDelete.value);
+            await updateDoc(driverDocRef, {
+                status: "inactive"
+            });
+        } else {
+            const driverDocRef = doc(driverCollection, driverToDelete.value);
+            const driverSnapshot = await getDoc(driverDocRef);
+            if (!driverSnapshot.exists()) {
+                throw new Error('Driver not found');
+            }
+            await deleteDoc(driverDocRef);
         }
-        await deleteDoc(driverDocRef);
         showDeleteModal.value = false;
     } catch (error) {
-        console.error("Error deleting driver: ", error);
+        console.error("Error handling driver action: ", error);
         errors.value.general = error.message;
     }
 };
@@ -283,9 +369,12 @@ const saveDriver = async () => {
         errors.value.general = error.message;
     }
 };
-const confirmDelete = (id) => {
+const confirmDelete = async (id) => {
     driverToDelete.value = id;
+    const pairingQuery = query(busDriverPairingCollection, where("driverId", "==", id));
+    const pairingSnapshot = await getDocs(pairingQuery);
     showDeleteModal.value = true;
+    isDriverPaired.value = !pairingSnapshot.empty;
 };
 const closeModal = () => {
     showAddDriverModal.value = false;
@@ -300,21 +389,17 @@ const closeModal = () => {
         confirmPassword: ''
     };
 };
+const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages.value) {
+        currentPage.value = page;
+    }
+};
 
 
-// Formatters
-const formatLicenseInput = (event) => {
-    currentDriver.value.licenseNumber = event.target.value
-        .replace(/[^A-Za-z0-9]/g, '')
-        .slice(0, 8);
-    validateLicense();
-};
-const formatPhoneInput = (event) => {
-    currentDriver.value.phone = event.target.value
-        .replace(/\D/g, '')
-        .slice(0, 11);
-    validatePhone();
-};
+// Watchers
+watch([sortColumn, sortDirection], () => {
+    currentPage.value = 1;
+});
 </script>
 
 
@@ -323,12 +408,13 @@ const formatPhoneInput = (event) => {
     <div class="py-4 container-fluid">
         <div class="row">
             <div class="col-12">
-                <div class="card mb-4">
+                <div class="card">
                     <div class="card-header pb-0">
                         <div class="d-flex justify-content-between align-items-center">
                             <h6>Driver List</h6>
                             <div>
-                                <argon-button color="info" size="sm" @click="showPairingModal = true" class="me-2">
+                                <argon-button color="info" size="sm" variant="gradient" @click="showPairingModal = true"
+                                    class="me-2">
                                     <i class="fas fa-link"></i> View Pairings
                                 </argon-button>
                                 <argon-button color="success" size="sm" @click="addDriver">
@@ -337,25 +423,34 @@ const formatPhoneInput = (event) => {
                             </div>
                         </div>
                     </div>
-                    <div class="card-body pt-0 pb-2">
+                    <div class="card-body">
                         <div class="table-responsive p-0">
                             <table class="table align-items-center justify-content-center mb-0">
                                 <thead>
                                     <tr>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Driver</th>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Phone
+                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
+                                            @click="handleSort('name')">
+                                            Driver
+                                            <i v-if="sortColumn === 'name'" class="fas ms-1"
+                                                :class="sortDirection === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
                                         </th>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            License
-                                            Number</th>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
+                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
+                                            @click="handleSort('phone')">
+                                            Phone
+                                            <i v-if="sortColumn === 'phone'" class="fas ms-1"
+                                                :class="sortDirection === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
+                                        </th>
+                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
+                                            @click="handleSort('licenseNumber')">
+                                            License Number
+                                            <i v-if="sortColumn === 'licenseNumber'" class="fas ms-1"
+                                                :class="sortDirection === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
+                                        </th>
+                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
+                                            @click="handleSort('status')">
                                             Status
+                                            <i v-if="sortColumn === 'status'" class="fas ms-1"
+                                                :class="sortDirection === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
                                         </th>
                                         <th
                                             class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
@@ -364,19 +459,15 @@ const formatPhoneInput = (event) => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-if="drivers.length === 0">
+                                    <tr v-if="paginatedDrivers.length === 0">
                                         <td colspan="5" class="text-center py-4">
                                             No driver found
                                         </td>
                                     </tr>
 
-                                    <tr v-for="driver in drivers" :key="driver.id">
+                                    <tr v-for="driver in paginatedDrivers" :key="driver.id">
                                         <td>
-                                            <div class="d-flex px-2">
-                                                <div>
-                                                    <img :src="driver.avatar || '../../assets/img/team-2.jpg'"
-                                                        class="avatar avatar-sm rounded-circle me-2" alt="driver" />
-                                                </div>
+                                            <div class="d-flex">
                                                 <div class="my-auto">
                                                     <h6 class="mb-0 text-sm">{{ driver.name }}</h6>
                                                     <p class="text-xs text-secondary mb-0">{{ driver.email }}</p>
@@ -391,10 +482,11 @@ const formatPhoneInput = (event) => {
                                         </td>
                                         <td>
                                             <span class="badge badge-sm d-inline-flex align-items-center gap-1"
-                                                :class="statusDisplay[driver.status]?.color"
+                                                :class="[statusDisplay[driver.status]?.color, statusDisplay[driver.status]?.textClass]"
                                                 :title="statusDisplay[driver.status]?.tooltip"
                                                 style="font-size: 0.8em;">
-                                                <i :class="statusDisplay[driver.status]?.icon"></i>
+                                                <i v-if="statusDisplay[driver.status]?.icon"
+                                                    :class="statusDisplay[driver.status]?.icon"></i>
                                                 {{ statusDisplay[driver.status]?.label || driver.status }}
                                             </span>
                                         </td>
@@ -411,6 +503,50 @@ const formatPhoneInput = (event) => {
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <!-- Pagination Controls -->
+                        <div class="d-flex justify-content-between align-items-center mt-3 ms-2">
+                            <div class="text-sm">
+                                Showing {{ showingFrom }}-{{ showingTo }} of {{ totalItems }} entries
+                            </div>
+                            <nav v-if="totalPages > 1">
+                                <ul class="pagination pagination-sm mb-0">
+                                    <li class="page-item" :class="{ disabled: currentPage === 1 }">
+                                        <button class="page-link" @click="goToPage(1)" title="First">
+                                            <i class="fas fa-angle-double-left"></i>
+                                        </button>
+                                    </li>
+                                    <li class="page-item" :class="{ disabled: currentPage === 1 }">
+                                        <button class="page-link" @click="goToPage(currentPage - 1)" title="Previous">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                    </li>
+
+                                    <li class="page-item disabled" v-if="showLeftEllipsis">
+                                        <span class="page-link">...</span>
+                                    </li>
+                                    <template v-for="page in visiblePages" :key="page">
+                                        <li class="page-item" :class="{ active: currentPage === page }">
+                                            <button class="page-link" @click="goToPage(page)">{{ page }}</button>
+                                        </li>
+                                    </template>
+                                    <li class="page-item disabled" v-if="showRightEllipsis">
+                                        <span class="page-link">...</span>
+                                    </li>
+
+                                    <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+                                        <button class="page-link" @click="goToPage(currentPage + 1)" title="Next">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </li>
+                                    <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+                                        <button class="page-link" @click="goToPage(totalPages)" title="Last">
+                                            <i class="fas fa-angle-double-right"></i>
+                                        </button>
+                                    </li>
+                                </ul>
+                            </nav>
                         </div>
                     </div>
 
@@ -493,9 +629,6 @@ const formatPhoneInput = (event) => {
                                             {{ errors.general }}
                                         </div>
                                         <div class="d-flex justify-content-end gap-3 mt-4">
-                                            <argon-button type="button" color="secondary" @click="closeModal">
-                                                Cancel
-                                            </argon-button>
                                             <argon-button type="submit" color="success" variant="gradient">
                                                 {{ editingDriver ? 'Update Driver' : 'Add Driver' }}
                                             </argon-button>
@@ -507,22 +640,30 @@ const formatPhoneInput = (event) => {
                     </div>
                     <div class="modal-backdrop fade show" v-if="showAddDriverModal"></div>
 
-                    <!-- Delete Confirmation Modal -->
+                    <!-- Delete or Deactivate Confirmation Modal -->
                     <div class="modal fade" :class="{ 'show d-block': showDeleteModal }" tabindex="-1" role="dialog"
                         v-if="showDeleteModal">
                         <div class="modal-dialog modal-dialog-centered" role="document">
                             <div class="modal-content">
                                 <div class="modal-header">
-                                    <h5 class="modal-title">Confirm Delete</h5>
+                                    <h5 class="modal-title">Confirm Action</h5>
                                     <button type="button" class="btn-close" @click="showDeleteModal = false"></button>
                                 </div>
                                 <div class="modal-body">
-                                    <p>Are you sure you want to delete this driver?</p>
+                                    <div v-if="isDriverPaired">
+                                        <p>This driver is currently assigned to a bus and cannot be deleted.</p>
+                                        <p>Would you like to set their status to "inactive" instead?</p>
+                                    </div>
+                                    <div v-else>
+                                        <p>Are you sure you want to permanently delete this driver?</p>
+                                    </div>
                                 </div>
-                                <div class="modal-footer">
-                                    <argon-button color="danger" @click="deleteDriver">Delete</argon-button>
+                                <div class="d-flex justify-content-end gap-2 mt-4">
                                     <argon-button color="secondary"
                                         @click="showDeleteModal = false">Cancel</argon-button>
+                                    <argon-button color="danger" @click="deleteOrDeactivateDriverAction">
+                                        {{ isDriverPaired ? 'Deactivate Driver' : 'Delete Driver' }}
+                                    </argon-button>
                                 </div>
                             </div>
                         </div>

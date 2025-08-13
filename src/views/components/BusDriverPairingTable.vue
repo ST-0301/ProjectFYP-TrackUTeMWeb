@@ -6,6 +6,7 @@ import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonSwitch from "@/components/ArgonSwitch.vue";
 
 
+// Props and Emits
 const props = defineProps({
     pairings: {
         type: Array,
@@ -21,18 +22,108 @@ const props = defineProps({
     }
 });
 const emit = defineEmits(['update-pairings']);
-
-
 // Reactive state
 const showAddPairing = ref(false);
 const editingPairing = ref(false);
 const newPairing = ref(createDefaultPairing());
 const pairingToDeactivate = ref(null);
 const showDeactivateModal = ref(false);
-const errors = ref({ general: '' });
-const sortColumn = ref(null);
+const sortColumn = ref("isActive");
 const sortDirection = ref('asc');
+const currentPage = ref(1);
+const itemsPerPage = ref(4);
 const showInactive = ref(false);
+const lastActivePage = ref(1);
+// Error state
+const errors = ref({ general: '' });
+
+
+// Computed properties
+const displayPairings = computed(() => {
+    const mappedPairings = props.pairings.map(pairing => {
+        const bus = props.buses.find(b => b.id === pairing.busId);
+        const driver = props.drivers.find(d => d.id === pairing.driverId);
+        return {
+            ...pairing,
+            busPlateNumber: bus ? bus.plateNumber : 'Unknown Bus',
+            driverName: driver ? driver.name : 'Unknown Driver'
+        };
+    });
+    let filteredPairings = mappedPairings;
+    if (!showInactive.value) {
+        filteredPairings = filteredPairings.filter(pairing => pairing.isActive);
+    }
+    if (sortColumn.value) {
+        return [...filteredPairings].sort((a, b) => {
+            let valA = a[sortColumn.value];
+            let valB = b[sortColumn.value];
+
+            if (sortColumn.value === 'isActive') {
+                valA = valA ? 1 : 0;
+                valB = valB ? 1 : 0;
+                const plateNumberA = a.busPlateNumber.toLowerCase();
+                const plateNumberB = b.busPlateNumber.toLowerCase();
+                if (valA === valB) {
+                    if (plateNumberA < plateNumberB) return sortDirection.value === 'asc' ? -1 : 1;
+                    if (plateNumberA > plateNumberB) return sortDirection.value === 'asc' ? 1 : -1;
+                    return 0;
+                }
+            } else if (typeof valA === 'string') {
+                valA = valA.toLowerCase();
+                valB = valB.toLowerCase();
+            }
+            if (valA < valB) {
+                return sortDirection.value === 'asc' ? -1 : 1;
+            }
+            if (valA > valB) {
+                return sortDirection.value === 'asc' ? 1 : -1;
+            }
+            return 0;
+        });
+    }
+    return filteredPairings;
+});
+const paginatedPairings = computed(() => {
+    const start = (currentPage.value - 1) * itemsPerPage.value;
+    const end = start + itemsPerPage.value;
+    return displayPairings.value.slice(start, end);
+});
+const totalItems = computed(() => displayPairings.value.length);
+const totalPages = computed(() => Math.ceil(totalItems.value / itemsPerPage.value));
+const showingFrom = computed(() => (currentPage.value - 1) * itemsPerPage.value + 1);
+const showingTo = computed(() => {
+    const to = currentPage.value * itemsPerPage.value;
+    return to > totalItems.value ? totalItems.value : to;
+});
+const showLeftEllipsis = computed(() => {
+    return currentPage.value > 3 && totalPages.value > 5;
+});
+const showRightEllipsis = computed(() => {
+    return currentPage.value < totalPages.value - 2 && totalPages.value > 5;
+});
+const visiblePages = computed(() => {
+    const pages = [];
+    const maxVisible = 3;
+    if (totalPages.value <= maxVisible) {
+        for (let i = 1; i <= totalPages.value; i++) {
+            pages.push(i);
+        }
+    } else {
+        let start = Math.max(1, currentPage.value - 1);
+        let end = Math.min(totalPages.value, currentPage.value + 1);
+        if (currentPage.value <= 2) {
+            end = maxVisible;
+        } else if (currentPage.value >= totalPages.value - 1) {
+            start = totalPages.value - maxVisible + 1;
+        }
+        for (let i = start; i <= end; i++) {
+            pages.push(i);
+        }
+    }
+    return pages;
+});
+const availableBuses = computed(() => props.buses);
+const availableDrivers = computed(() => props.drivers);
 
 
 // Helper functions
@@ -71,61 +162,19 @@ const sortBy = (column) => {
     }
 };
 const toggleShowInactive = () => {
-    showInactive.value = !showInactive.value;
-    if (showInactive.value) {
+    if (!showInactive.value) {
+        lastActivePage.value = currentPage.value;
+        showInactive.value = true;
         sortColumn.value = 'isActive';
         sortDirection.value = 'desc';
+        // currentPage.value = 1; 
     } else {
-        if (sortColumn.value === 'isActive') {
-            sortColumn.value = null;
-            sortDirection.value = 'asc';
-        }
+        showInactive.value = false;
+        sortColumn.value = null;
+        sortDirection.value = 'asc';
+        currentPage.value = lastActivePage.value;
     }
 };
-
-
-// Computed properties
-const displayPairings = computed(() => {
-    const mappedPairings = props.pairings.map(pairing => {
-        const bus = props.buses.find(b => b.id === pairing.busId);
-        const driver = props.drivers.find(d => d.id === pairing.driverId);
-        return {
-            ...pairing,
-            busPlateNumber: bus ? bus.plateNumber : 'Unknown Bus',
-            driverName: driver ? driver.name : 'Unknown Driver'
-        };
-    });
-    let filteredPairings = mappedPairings;
-    if (!showInactive.value) {
-        filteredPairings = filteredPairings.filter(pairing => pairing.isActive);
-    }
-
-    if (sortColumn.value) {
-        return [...filteredPairings].sort((a, b) => {
-            let valA = a[sortColumn.value];
-            let valB = b[sortColumn.value];
-
-            if (sortColumn.value === 'isActive') {
-                valA = valA ? 1 : 0;
-                valB = valB ? 1 : 0;
-            } else if (typeof valA === 'string') {
-                valA = valA.toLowerCase();
-                valB = valB.toLowerCase();
-            }
-
-            if (valA < valB) {
-                return sortDirection.value === 'asc' ? -1 : 1;
-            }
-            if (valA > valB) {
-                return sortDirection.value === 'asc' ? 1 : -1;
-            }
-            return 0;
-        });
-    }
-    return filteredPairings;
-});
-const availableBuses = computed(() => props.buses);
-const availableDrivers = computed(() => props.drivers);
 
 
 // CRUD operations
@@ -205,6 +254,14 @@ const deactivatePairing = async () => {
         errors.value.general = "An unexpected error occurred while deactivating the pairing. Please try again.";
     }
 };
+
+
+// UI handler
+const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages.value) {
+        currentPage.value = page;
+    }
+};
 </script>
 
 
@@ -212,8 +269,10 @@ const deactivatePairing = async () => {
 <template>
     <div>
         <div class="d-flex justify-content-end mb-3">
-            <argon-button color="success" size="sm" @click="toggleAddPairingSection">
-                <i class="ni ni-fat-add"></i> {{ showAddPairing ? 'Cancel Add Pairing' : 'Add New Pairing' }}
+            <argon-button :color="showAddPairing ? 'danger' : 'primary'" size="sm" variant="outline"
+                @click="toggleAddPairingSection">
+                <i :class="showAddPairing ? 'fas fa-times' : 'ni ni-fat-add'"></i>
+                {{ showAddPairing ? 'Cancel Add Pairing' : 'Add New Pairing' }}
             </argon-button>
         </div>
 
@@ -285,12 +344,12 @@ const deactivatePairing = async () => {
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-if="displayPairings.length === 0">
+                    <tr v-if="paginatedPairings.length === 0">
                         <td colspan="4" class="text-center py-4">
                             No pairings found
                         </td>
                     </tr>
-                    <tr v-for="pairing in displayPairings" :key="pairing.id">
+                    <tr v-for="pairing in paginatedPairings" :key="pairing.id">
                         <td>
                             <p class="text-sm font-weight-bold mb-0">{{ pairing.busPlateNumber }}</p>
                         </td>
@@ -316,7 +375,51 @@ const deactivatePairing = async () => {
                 </tbody>
             </table>
 
-            <div class="d-flex justify-content-center mt-3">
+            <!-- Pagination Controls -->
+            <div class="d-flex justify-content-between align-items-center mt-3 ms-2">
+                <div class="text-sm">
+                    Showing {{ showingFrom }}-{{ showingTo }} of {{ totalItems }} entries
+                </div>
+                <nav v-if="totalPages > 1">
+                    <ul class="pagination pagination-sm mb-0">
+                        <li class="page-item" :class="{ disabled: currentPage === 1 }">
+                            <button class="page-link" @click="goToPage(1)" title="First">
+                                <i class="fas fa-angle-double-left"></i>
+                            </button>
+                        </li>
+                        <li class="page-item" :class="{ disabled: currentPage === 1 }">
+                            <button class="page-link" @click="goToPage(currentPage - 1)" title="Previous">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                        </li>
+
+                        <li class="page-item disabled" v-if="showLeftEllipsis">
+                            <span class="page-link">...</span>
+                        </li>
+                        <template v-for="page in visiblePages" :key="page">
+                            <li class="page-item" :class="{ active: currentPage === page }">
+                                <button class="page-link" @click="goToPage(page)">{{ page }}</button>
+                            </li>
+                        </template>
+                        <li class="page-item disabled" v-if="showRightEllipsis">
+                            <span class="page-link">...</span>
+                        </li>
+
+                        <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+                            <button class="page-link" @click="goToPage(currentPage + 1)" title="Next">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </li>
+                        <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+                            <button class="page-link" @click="goToPage(totalPages)" title="Last">
+                                <i class="fas fa-angle-double-right"></i>
+                            </button>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+
+            <div v-if="currentPage === totalPages" class="d-flex justify-content-center mt-3">
                 <argon-button color="link" @click="toggleShowInactive">
                     <i :class="['fas', showInactive ? 'fa-angle-double-up' : 'fa-angle-double-down']"></i>
                     {{ showInactive ? 'Hide Inactive Pairings' : 'Show All' }}
@@ -324,22 +427,24 @@ const deactivatePairing = async () => {
             </div>
         </div>
 
+        <!-- Deactivate Confirmation Modal -->
         <div class="modal fade" :class="{ 'show d-block': showDeactivateModal }" tabindex="-1" role="dialog"
             v-if="showDeactivateModal">
             <div class="modal-dialog modal-dialog-centered" role="document">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">Confirm Deactivation</h5>
+                        <h5 class="modal-title">Confirm Pairing Deactivation</h5>
                         <button type="button" class="btn-close" @click="showDeactivateModal = false"></button>
                     </div>
                     <div class="modal-body">
-                        <p>Pairings cannot be removed, only set to inactive. Are you sure you want to set this
-                            pairing
-                            to inactive?</p>
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Important:</strong> Pairings cannot be permanently deleted.
+                        <p class="mt-3">This will mark the bus-driver pairing as inactive. Are you sure you want to
+                            proceed with deactivation?</p>
                     </div>
-                    <div class="modal-footer">
-                        <argon-button color="danger" @click="deactivatePairing">Set Inactive</argon-button>
+                    <div class="d-flex justify-content-end gap-2 mt-4">
                         <argon-button color="secondary" @click="showDeactivateModal = false">Cancel</argon-button>
+                        <argon-button color="danger" @click="deactivatePairing">Set Inactive</argon-button>
                     </div>
                 </div>
             </div>

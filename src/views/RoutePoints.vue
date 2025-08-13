@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch, nextTick, reactive } from 'vue';
+import { ref, onMounted, watch, nextTick, reactive, computed } from 'vue';
 import { deleteDoc, updateDoc, setDoc, onSnapshot, doc, getDocs, query, where, GeoPoint } from 'firebase/firestore';
 import { rPointCollection, routeCollection } from '@/firebase';
 import ArgonButton from "@/components/ArgonButton.vue";
@@ -7,6 +7,8 @@ import ArgonInput from "@/components/ArgonInput.vue";
 import GoogleMapPicker from '@/views/components/GoogleMapPicker.vue';
 
 
+// Constant
+const DEFAULT_CENTER = { lat: 2.3114, lng: 102.3203 };
 // Reactive state
 const rpoints = ref([]);
 const routes = ref([]);
@@ -16,10 +18,14 @@ const editingRPoint = ref(false);
 const currentRPoint = reactive(createDefaultRPoint());
 const rPointToDelete = ref(null);
 const routesUsingRPoint = ref([]);
-const errors = ref({ name: '', coordinates: '', general: '' });
 const mapLoaded = ref(false);
-const DEFAULT_CENTER = { lat: 2.3114, lng: 102.3203 };
 const mapCenter = ref({ ...DEFAULT_CENTER });
+const sortColumn = ref('name');
+const sortDirection = ref('asc');
+const currentPage = ref(1);
+const itemsPerPage = ref(10);
+// Error state
+const errors = ref({ name: '', coordinates: '', general: '' });
 
 
 // Lifecycle hooks
@@ -49,14 +55,83 @@ onMounted(() => {
 });
 
 
+// Computed properties
+const sortedRPoints = computed(() => {
+    if (!sortColumn.value) return rpoints.value;
+    return [...rpoints.value].sort((a, b) => {
+        let valA = a[sortColumn.value];
+        let valB = b[sortColumn.value];
+        if (sortColumn.value === 'coordinates') {
+            valA = a.coordinates?.latitude ?? a.coordinates?.lat ?? 0;
+            valB = b.coordinates?.latitude ?? b.coordinates?.lat ?? 0;
+        }
+        if (sortColumn.value === 'routeNames') {
+            const routesA = routes.value.filter(route =>
+                route.rpoints && route.rpoints.includes(a.id)
+            ).sort((x, y) => x.name.localeCompare(y.name));
+
+            const routesB = routes.value.filter(route =>
+                route.rpoints && route.rpoints.includes(b.id)
+            ).sort((x, y) => x.name.localeCompare(y.name));
+
+            valA = routesA[0]?.name || '';
+            valB = routesB[0]?.name || '';
+        }
+        if (typeof valA === 'string') valA = valA.toLowerCase();
+        if (typeof valB === 'string') valB = valB.toLowerCase();
+        if (valA < valB) return sortDirection.value === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
+const paginatedRPoints = computed(() => {
+    const start = (currentPage.value - 1) * itemsPerPage.value;
+    const end = start + itemsPerPage.value;
+    return sortedRPoints.value.slice(start, end);
+});
+const totalItems = computed(() => sortedRPoints.value.length);
+const totalPages = computed(() => Math.ceil(totalItems.value / itemsPerPage.value));
+const showingFrom = computed(() => (currentPage.value - 1) * itemsPerPage.value + 1);
+const showingTo = computed(() => {
+    const to = currentPage.value * itemsPerPage.value;
+    return to > totalItems.value ? totalItems.value : to;
+});
+const showLeftEllipsis = computed(() => {
+    return currentPage.value > 3 && totalPages.value > 5;
+});
+const showRightEllipsis = computed(() => {
+    return currentPage.value < totalPages.value - 2 && totalPages.value > 5;
+});
+const visiblePages = computed(() => {
+    const pages = [];
+    const maxVisible = 3;
+    if (totalPages.value <= maxVisible) {
+        for (let i = 1; i <= totalPages.value; i++) {
+            pages.push(i);
+        }
+    } else {
+        let start = Math.max(1, currentPage.value - 1);
+        let end = Math.min(totalPages.value, currentPage.value + 1);
+        if (currentPage.value <= 2) {
+            end = maxVisible;
+        } else if (currentPage.value >= totalPages.value - 1) {
+            start = totalPages.value - maxVisible + 1;
+        }
+        for (let i = start; i <= end; i++) {
+            pages.push(i);
+        }
+    }
+    return pages;
+});
+
+
 // Helper functions
 function createDefaultRPoint() {
     return {
         rpointId: "",
         name: "",
         type: "",
-        coordinates: { lat: null, lng: null },
-        created: null
+        coordinates: { lat: null, lng: null }
     };
 }
 async function checkExistingRPoint() {
@@ -84,7 +159,26 @@ const getRouteNamesForRPoint = (rpointId) => {
     const matchingRoutes = routes.value.filter(route =>
         route.rpoints && route.rpoints.includes(rpointId)
     );
-    return matchingRoutes.map(route => route.name).join(', ') || '-';
+    const sortedRoutes = [...matchingRoutes].sort((a, b) =>
+        a.name.localeCompare(b.name)
+    );
+    return sortedRoutes.map(route => route.name).join(', ') || '-';
+};
+const handleSort = (column) => {
+    if (column === sortColumn.value) {
+        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortColumn.value = column;
+        sortDirection.value = 'asc';
+    }
+};
+const formatCoordinates = (coords) => {
+    if (!coords) return 'N/A';
+    const lat = coords.latitude ?? coords.lat;
+    const lng = coords.longitude ?? coords.lng;
+    if (lat === undefined || lng === undefined) return 'N/A';
+
+    return `${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`;
 };
 
 
@@ -133,8 +227,7 @@ async function createRPoint() {
             coordinates: new GeoPoint(
                 currentRPoint.coordinates.lat,
                 currentRPoint.coordinates.lng
-            ),
-            created: new Date().toISOString()
+            )
         };
         await setDoc(newRPointRef, rPointData);
     } catch (error) {
@@ -222,44 +315,21 @@ const closeModal = () => {
     Object.assign(currentRPoint, createDefaultRPoint());
     errors.value = {name: '', coordinates: '', general: ''};
 };
-
-
-// Formatters
-const formatCoordinates = (coords) => {
-    if (!coords) return 'N/A';
-    const lat = coords.latitude ?? coords.lat;
-    const lng = coords.longitude ?? coords.lng;
-    if (lat === undefined || lng === undefined) return 'N/A';
-
-    return `${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`;
-};
-const formatDateTime = (dateInput) => {
-    let date;
-    if (dateInput && typeof dateInput.toDate === 'function') {
-        date = dateInput.toDate();
-    } else {
-        date = new Date(dateInput);
+const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages.value) {
+        currentPage.value = page;
     }
-    if (isNaN(date.getTime())) {
-        return '-';
-    }
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    let hours = date.getHours();
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12;
-
-    return `${year}-${month}-${day}, ${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
 };
 
 
-// Watcher
+// Watchers
 watch(() => currentRPoint.coordinates, (newVal) => {
     currentRPoint.coordinates.lat = Number(newVal.lat);
     currentRPoint.coordinates.lng = Number(newVal.lng);
 }, { deep: true, immediate: true });
+watch([sortColumn, sortDirection], () => {
+    currentPage.value = 1;
+});
 </script>
 
 
@@ -268,7 +338,7 @@ watch(() => currentRPoint.coordinates, (newVal) => {
     <div class="py-4 container-fluid">
         <div class="row">
             <div class="col-12">
-                <div class="card mb-4">
+                <div class="card">
                     <div class="card-header pb-0">
                         <div class="d-flex justify-content-between align-items-center">
                             <h6>Location List</h6>
@@ -277,29 +347,33 @@ watch(() => currentRPoint.coordinates, (newVal) => {
                             </argon-button>
                         </div>
                     </div>
-                    <div class="card-body pt-0 pb-2">
+                    <div class="card-body">
                         <div class="table-responsive p-0">
                             <table class="table align-items-center justify-content-center mb-0">
                                 <thead>
                                     <tr>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Location Name</th>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
+                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
+                                            @click="handleSort('name')">
+                                            Location Name<i v-if="sortColumn === 'name'" class="fas ms-1"
+                                                :class="sortDirection === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
+                                        </th>
+                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
+                                            @click="handleSort('coordinates')">
                                             Coordinates
+                                            <i v-if="sortColumn === 'coordinates'" class="fas ms-1"
+                                                :class="sortDirection === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
                                         </th>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Route (s)
+                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
+                                            @click="handleSort('routeNames')">
+                                            Route(s)
+                                            <i v-if="sortColumn === 'routeNames'" class="fas ms-1"
+                                                :class="sortDirection === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
                                         </th>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
+                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
+                                            @click="handleSort('type')">
                                             Type
-                                        </th>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Created
+                                            <i v-if="sortColumn === 'type'" class="fas ms-1"
+                                                :class="sortDirection === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
                                         </th>
                                         <th
                                             class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
@@ -308,13 +382,13 @@ watch(() => currentRPoint.coordinates, (newVal) => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-if="rpoints.length === 0">
-                                        <td colspan="6" class="text-center py-4">
+                                    <tr v-if="paginatedRPoints.length === 0">
+                                        <td colspan="5" class="text-center py-4">
                                             No location found
                                         </td>
                                     </tr>
 
-                                    <tr v-for="rPoint in rpoints" :key="rPoint.rpointId">
+                                    <tr v-for="rPoint in paginatedRPoints" :key="rPoint.rpointId">
                                         <td>
                                             <p class="text-sm font-weight-bold mb-0">{{ rPoint.name }}</p>
                                         </td>
@@ -336,11 +410,6 @@ watch(() => currentRPoint.coordinates, (newVal) => {
                                                 {{ rPoint.type === 'bus_stop' ? 'Bus Stop' : 'Event Location' }}
                                             </span>
                                         </td>
-                                        <td>
-                                            <p class="text-sm font-weight-bold mb-0">{{
-                                                formatDateTime(rPoint.created) }}
-                                            </p>
-                                        </td>
 
                                         <td class="align-middle">
                                             <button class="btn btn-link text-secondary mb-0 px-1"
@@ -355,6 +424,50 @@ watch(() => currentRPoint.coordinates, (newVal) => {
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <!-- Pagination Controls -->
+                        <div class="d-flex justify-content-between align-items-center mt-3 ms-2">
+                            <div class="text-sm">
+                                Showing {{ showingFrom }}-{{ showingTo }} of {{ totalItems }} entries
+                            </div>
+                            <nav v-if="totalPages > 1">
+                                <ul class="pagination pagination-sm mb-0">
+                                    <li class="page-item" :class="{ disabled: currentPage === 1 }">
+                                        <button class="page-link" @click="goToPage(1)" title="First">
+                                            <i class="fas fa-angle-double-left"></i>
+                                        </button>
+                                    </li>
+                                    <li class="page-item" :class="{ disabled: currentPage === 1 }">
+                                        <button class="page-link" @click="goToPage(currentPage - 1)" title="Previous">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                    </li>
+
+                                    <li class="page-item disabled" v-if="showLeftEllipsis">
+                                        <span class="page-link">...</span>
+                                    </li>
+                                    <template v-for="page in visiblePages" :key="page">
+                                        <li class="page-item" :class="{ active: currentPage === page }">
+                                            <button class="page-link" @click="goToPage(page)">{{ page }}</button>
+                                        </li>
+                                    </template>
+                                    <li class="page-item disabled" v-if="showRightEllipsis">
+                                        <span class="page-link">...</span>
+                                    </li>
+
+                                    <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+                                        <button class="page-link" @click="goToPage(currentPage + 1)" title="Next">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </li>
+                                    <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+                                        <button class="page-link" @click="goToPage(totalPages)" title="Last">
+                                            <i class="fas fa-angle-double-right"></i>
+                                        </button>
+                                    </li>
+                                </ul>
+                            </nav>
                         </div>
                     </div>
 
@@ -453,9 +566,6 @@ watch(() => currentRPoint.coordinates, (newVal) => {
                                                 {{ errors.general }}
                                             </div>
                                             <div class="d-flex justify-content-end gap-3 mt-2">
-                                                <argon-button type="button" color="secondary" @click="closeModal">
-                                                    Cancel
-                                                </argon-button>
                                                 <argon-button type="submit" color="success" variant="gradient">
                                                     {{ editingRPoint ? 'Update Location' : 'Add Location' }}
                                                 </argon-button>
@@ -469,12 +579,10 @@ watch(() => currentRPoint.coordinates, (newVal) => {
                     <div class="modal-backdrop fade show" v-if="showAddRPointModal"></div>
 
 
-
-
                     <!-- Delete Confirmation Modal -->
                     <div class="modal fade" :class="{ 'show d-block': showDeleteModal }" tabindex="-1" role="dialog"
                         v-if="showDeleteModal">
-                        <div class="modal-dialog modal-dialog-centered" role="document">
+                        <div class="modal-dialog modal-dialog-centered">
                             <div class="modal-content">
                                 <div class="modal-header">
                                     <h5 class="modal-title">Confirm Delete</h5>
@@ -491,11 +599,12 @@ watch(() => currentRPoint.coordinates, (newVal) => {
                                     </div>
                                     <p v-else>Are you sure you want to delete this location?</p>
                                 </div>
-                                <div class="modal-footer">
-                                    <argon-button color="danger" @click="deleteRPoint"
-                                        :disabled="routesUsingRPoint.length > 0">Delete</argon-button>
+
+                                <div class="d-flex justify-content-end gap-2 mt-4">
                                     <argon-button color="secondary"
                                         @click="showDeleteModal = false">Cancel</argon-button>
+                                    <argon-button color="danger" @click="deleteRPoint"
+                                        :disabled="routesUsingRPoint.length > 0">Confirm Delete</argon-button>
                                 </div>
                             </div>
                         </div>

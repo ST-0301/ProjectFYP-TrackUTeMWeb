@@ -9,6 +9,7 @@ import BusDriverPairingTable from '@/views/components/BusDriverPairingTable.vue'
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
 
+
 const route = useRoute();
 // Constants
 const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -242,7 +243,7 @@ const convertFromMinutes = (totalMinutes) => {
     let remainingMinutes = totalMinutes;
 
     const days = Math.floor(remainingMinutes / (24 * 60));
-    remainingMinutes %= (24 * 60); 
+    remainingMinutes %= (24 * 60);
 
     const hours = Math.floor(remainingMinutes / 60);
     remainingMinutes %= 60;
@@ -268,7 +269,7 @@ const getScheduleStatusColor = (status) => {
     switch (status) {
         case 'scheduled': return '#007bff';
         case 'completed': return '#28a745';
-        case 'cancelled': return '#6c757d'; 
+        case 'cancelled': return '#6c757d';
         case 'in_progress': return '#fd7e14';
         case 'cancelled_fully': return '#f1f1f1';
         default: return '#dc3545';
@@ -330,13 +331,13 @@ const getDriverDisplay = (driverId) => {
     const driver = drivers.value.find(d => d.id === driverId);
     if (!driver) return 'Unknown Driver';
     const isActivePaired = activebusDriverPairs.value.some(pair => pair.driverId === driverId);
-    return isActivePaired ? `${driver.name}` : `${driver.name} (Not Actively Paired)`;
+    return isActivePaired ? `${driver.name}` : `${driver.name} (Not Active Pairing)`;
 };
 const getBusDisplay = (busId) => {
     const bus = buses.value.find(b => b.id === busId);
     if (!bus) return 'Unknown Bus';
     const isActivePaired = activebusDriverPairs.value.some(pair => pair.busId === busId);
-    return isActivePaired ? bus.plateNumber : `${bus.plateNumber} (Not Actively Paired)`;
+    return isActivePaired ? bus.plateNumber : `${bus.plateNumber} (Not Active Pairing)`;
 };
 const getTotalQueuedStudents = (schedules) => {
     let totalStudents = 0;
@@ -516,7 +517,7 @@ const validateStep1 = () => {
 };
 const validateStep2 = () => {
     clearErrors();
-    
+
     if (createScheduleForm.value.type === 'event') {
         return validateEventScheduleForm();
     }
@@ -630,6 +631,10 @@ const validateEventScheduleForm = () => {
     return true;
 };
 const validateAssignments = () => {
+    clearErrors();
+    let isValid = true;
+    const errorMessages = [];
+    
     for (const assignment of modalAssignments.value) {
         if (assignment.driverId && assignment.busId) {
             const foundPair = busDriverPairings.value.find(
@@ -639,15 +644,38 @@ const validateAssignments = () => {
             );
             if (!foundPair) {
                 errors.value.assignments = "The driver and bus you selected are not an active team. Please choose an existing team or create a new one.";
-                return false;
+                isValid = false;
             }
-            assignment.pairId = foundPair.id;
+            else {
+                assignment.pairId = foundPair.id;
+            }
         } else if (assignment.driverId || assignment.busId) {
-            errors.value.assignments = "Please select both a driver and a bus for an assignment, or leave both empty.";
-            return false;
+            if (assignment.driverId && !assignment.busId) {
+                const driverHasActivePairs = busDriverPairings.value.some(
+                    pair => pair.driverId === assignment.driverId && pair.isActive
+                );
+
+                if (!driverHasActivePairs) {
+                    errorMessages.push(`The selected driver "${getDriverDisplay(assignment.driverId)}" is not actively paired with any bus. Please create a pairing first.`);
+                    isValid = false;
+                }
+            }
+            if (assignment.busId && !assignment.driverId) {
+                const busHasActivePairs = busDriverPairings.value.some(
+                    pair => pair.busId === assignment.busId && pair.isActive
+                );
+
+                if (!busHasActivePairs) {
+                    errorMessages.push(`The selected bus "${getBusDisplay(assignment.busId)}" is not actively paired with any driver. Please create a pairing first.`);
+                    isValid = false;
+                }
+            }
         }
     }
-    return true;
+    if (errorMessages.length > 0) {
+        errors.value.assignments = errorMessages.join('\n');
+    }
+    return isValid;
 };
 
 
@@ -687,7 +715,7 @@ const setupSchedulesListener = () => {
         where('routeId', '==', routeId),
         where('scheduledDatetime', '>=', startTimestamp),
         where('scheduledDatetime', '<', endTimestamp),
-        where('type', 'in', ['incampus', 'outcampus', 'event']) 
+        where('type', 'in', ['incampus', 'outcampus', 'event'])
     );
 
     unsubscribeSchedules.value = onSnapshot(q, (querySnapshot) => {
@@ -725,7 +753,7 @@ const setupSchedulesListener = () => {
                 routeId: schedItem.routeId,
                 scheduledDatetime: schedItem.scheduledDatetime,
                 status: schedItem.status,
-                busDriverPairId: schedItem.busDriverPairId || null, 
+                busDriverPairId: schedItem.busDriverPairId || null,
                 rpoints: schedItem.rpoints || [],
                 queueOpenMinutes: schedItem.queueOpenMinutes ?? 0,
                 queueCloseMinutes: schedItem.queueCloseMinutes ?? 0,
@@ -1669,23 +1697,22 @@ const handleSaveScheduleClick = async () => {
 
 // Watchers
 watch(() => route.query, async (newQuery) => {
-    if (newQuery.openModal === 'true' && route.params.id) {
-        const { type, time, date, weekStart } = newQuery;
-        if (!weekStart) return;
-        if (type && type !== 'event') {
-            activeTab.value = type;
-        }
-        if (unsubscribeSchedules.value) {
-            unsubscribeSchedules.value();
-        }
-        currentWeekStart.value = new Date(weekStart);
-        selectedDate.value = date;
-        await nextTick();
-        setupSchedulesListener();
+    const { type, time, date, weekStart, openModal } = newQuery;
+    if (!route.params.id || !weekStart) return;
+    if (type && type !== 'event') {
+        activeTab.value = type;
+    }
+    if (unsubscribeSchedules.value) {
+        unsubscribeSchedules.value();
+    }
+    currentWeekStart.value = new Date(weekStart);
+    selectedDate.value = date;
+    await nextTick();
+    setupSchedulesListener();
 
+    if (openModal === 'true' && time) {
         const checkSchedulesLoaded = () => {
             if (Object.keys(schedules.value).length > 0) {
-                // Find the matching schedules
                 const matchingSchedules = [];
                 Object.entries(schedules.value).forEach(([fullDate, daySchedules]) => {
                     if (fullDate === date && daySchedules[activeTab.value]) {
@@ -1696,30 +1723,14 @@ watch(() => route.query, async (newQuery) => {
                         });
                     }
                 });
-
-                // Open the modal if matching schedules are found
                 if (matchingSchedules.length > 0) {
                     openUpdateModal(matchingSchedules);
                 }
             } else {
-                // Retry after a short delay if schedules are not yet loaded
                 setTimeout(checkSchedulesLoaded, 100);
             }
         };
         checkSchedulesLoaded();
-        // const matchingSchedules = [];
-        // Object.entries(schedules.value).forEach(([fullDate, daySchedules]) => {
-        //     if (fullDate === date && daySchedules[type]) {
-        //         Object.entries(daySchedules[type]).forEach(([scheduleTime, scheduleGroup]) => {
-        //             if (scheduleTime.replace(/ /g, '') === time.replace(/ /g, '')) {
-        //                 matchingSchedules.push(...scheduleGroup);
-        //             }
-        //         });
-        //     }
-        // });
-        // if (matchingSchedules.length > 0) {
-        //     openUpdateModal(matchingSchedules);
-        // }
     }
 }, { immediate: true });
 watch(activeTab, (newTab, oldTab) => {
@@ -2101,8 +2112,6 @@ watch(selectedDate, (newDate) => {
                             Delete Schedule
                         </argon-button>
 
-                        <argon-button color="secondary" @click="closeModal">Cancel</argon-button>
-
                         <argon-button color="secondary" v-if="currentStep > 1 && createScheduleForm.type !== 'event'"
                             @click="selectedScheduleForUpdate && currentStep === 2 ? goBackToAssignmentStep() : currentStep--">Previous</argon-button>
 
@@ -2140,6 +2149,18 @@ watch(selectedDate, (newDate) => {
                             class="mb-3 p-2 border rounded">
                             <div class="mb-3 row">
                                 <div class="col-md-5">
+                                    <label :for="'bus-' + index" class="form-label">Bus</label>
+                                    <select :id="'bus-' + index" class="form-select" v-model="assignment.busId"
+                                        @change="autoFillDriver(assignment)" :disabled="isAssignmentLocked(assignment)">
+                                        <option value="">Select Bus</option>
+                                        <option v-for="bus in getFilteredBuses(assignment.driverId, index)"
+                                            :key="bus.id" :value="bus.id">
+                                            {{ getBusDisplay(bus.id) }}
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <div class="col-md-5">
                                     <label :for="'driver-' + index" class="form-label">Driver</label>
                                     <select :id="'driver-' + index" class="form-select" v-model="assignment.driverId"
                                         @change="autoFillBus(assignment)" :disabled="isAssignmentLocked(assignment)">
@@ -2151,17 +2172,6 @@ watch(selectedDate, (newDate) => {
                                     </select>
                                 </div>
 
-                                <div class="col-md-5">
-                                    <label :for="'bus-' + index" class="form-label">Bus</label>
-                                    <select :id="'bus-' + index" class="form-select" v-model="assignment.busId"
-                                        @change="autoFillDriver(assignment)" :disabled="isAssignmentLocked(assignment)">
-                                        <option value="">Select Bus</option>
-                                        <option v-for="bus in getFilteredBuses(assignment.driverId, index)"
-                                            :key="bus.id" :value="bus.id">
-                                            {{ getBusDisplay(bus.id) }}
-                                        </option>
-                                    </select>
-                                </div>
                                 <div class="col-md-2 d-flex align-items-end">
                                     <argon-button color="danger" icon
                                         @click="confirmDeleteAssignment(assignment, index)"
@@ -2177,11 +2187,12 @@ watch(selectedDate, (newDate) => {
                             </div>
                         </div>
                         <div class="mb-3">
-                            <button class="btn btn-sm btn-outline-primary mb-2" @click="addAssignmentRow">+ Add
-                                Assignment</button>
+                            <argon-button color="primary" size="sm" variant="outline" @click="addAssignmentRow"><i
+                                    class="ni ni-fat-add"></i> Add Assignment</argon-button>
                         </div>
                         <div class="mb-3">
-                            <argon-button color="info" size="sm" @click="showPairingModal = true" class="me-2">
+                            <argon-button color="info" size="sm" variant="gradient" @click="showPairingModal = true"
+                                class="me-2">
                                 <i class="fas fa-link"></i> View Pairings
                             </argon-button>
                         </div>
@@ -2192,19 +2203,20 @@ watch(selectedDate, (newDate) => {
                             <p class="mt-2">{{ message }}</p>
                         </div>
                         <div v-if="errors.assignments" class="text-danger text-sm mt-1">
-                            {{ errors.assignments }}
+                            <div v-for="(error, index) in errors.assignments.split('\n')" :key="index">
+                                <i class="fas fa-exclamation-circle me-1"></i> {{ error }}
+                            </div>
                         </div>
                     </div>
 
                     <div class="d-flex justify-content-end gap-2 mt-4">
-                        <argon-button color="secondary" @click="closeModal">Cancel</argon-button>
-
                         <argon-button color="danger" @click="confirmDeleteSchedule()">
                             Delete Schedule
                         </argon-button>
 
                         <argon-button color="secondary" v-if="currentRoute.type !== 'event'"
-                            @click="goToDetailsStep">Update Schedule Details</argon-button>
+                            @click="goToDetailsStep">Update
+                            Schedule Details</argon-button>
 
                         <div v-if="currentStep === 1 || currentStep === 4">
                             <argon-button color="primary" :disabled="isLoading" @click="handleSaveAssignmentClick">
@@ -2237,7 +2249,7 @@ watch(selectedDate, (newDate) => {
     </div>
     <div class="modal-backdrop fade show" v-if="showPairingModal"></div>
 
-    <!-- Delete confirmation modal -->
+    <!-- Delete or Cancel Confirmation Modal -->
     <div v-if="showDeleteConfirmModal" class="modal fade delete-confirm-modal"
         :class="{ 'show d-block': showDeleteConfirmModal }" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
@@ -2268,9 +2280,6 @@ watch(selectedDate, (newDate) => {
                     </div>
 
                     <div class="d-flex justify-content-end gap-2 mt-4">
-                        <argon-button color="secondary" @click="closeModal">
-                            Cancel
-                        </argon-button>
                         <argon-button color="danger"
                             @click="scheduleToActOn ? deleteOrCancelSchedule() : deleteAssignment()">
                             {{
@@ -2388,12 +2397,15 @@ watch(selectedDate, (newDate) => {
     transition: all 0.2s ease-in-out;
     overflow: hidden;
 }
+
 .date-picker-trigger:hover {
     background-color: rgba(0, 0, 0, 0.05);
 }
+
 .date-picker-trigger i {
     font-size: 0.75rem;
 }
+
 .visually-hidden-date-input {
     position: absolute;
     top: 0;
@@ -2402,6 +2414,7 @@ watch(selectedDate, (newDate) => {
     cursor: pointer;
     z-index: 1;
 }
+
 .arrow-nav-btn {
     background-color: transparent;
     border: none;
@@ -2417,10 +2430,12 @@ watch(selectedDate, (newDate) => {
     transition: background-color 0.3s ease, color 0.3s ease;
     padding: 0;
 }
+
 .arrow-nav-btn:hover {
     background-color: rgba(0, 0, 0, 0.1);
     color: #344767;
 }
+
 .today-btn {
     border-radius: 1rem;
     padding: 0.5rem 2rem !important;
@@ -2463,23 +2478,23 @@ th {
     display: inline-flex;
     align-items: center;
 } */
+.cell-fully-cancelled {
+     background-color: #f1f1f1;
+     font-style: italic;
+     padding: 10px 0;
+ }
 .badge-in-progress {
     background-color: #fd7e14;
     color: white;
+}
+.bg-fully-cancelled {
+    background-color: #f1f1f1;
+    box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.12) !important;
 }
 .modal.delete-confirm-modal {
     z-index: 1060;
 }
 .modal-backdrop.delete-confirm-backdrop {
     z-index: 1050;
-}
-.cell-fully-cancelled {
-    background-color: #f1f1f1;
-    font-style: italic;
-    padding: 10px 0;
-}
-.bg-fully-cancelled {
-    background-color: #f1f1f1;
-    box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.12) !important;
 }
 </style>

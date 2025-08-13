@@ -7,6 +7,8 @@ import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
 
 
+// Constant
+const DEFAULT_CENTER = { lat: 2.3114, lng: 102.3203 };
 // Reactive state
 const routes = ref([]);
 const rpoints = ref([]);
@@ -14,19 +16,21 @@ const showAddRouteModal = ref(false);
 const showDeleteModal = ref(false);
 const editingRoute = ref(false);
 const currentRoute = reactive(createDefaultRoute());
-const rPointSelectionMode = ref('regular'); // 'regular' or 'event'
+const rPointSelectionMode = ref('regular');
 const pendingPinpoint = ref(null);
 const pendingRPointId = ref(null);
 const pendingName = ref('');
 const editingPinpointIndex = ref(null);
 const routeToDelete = ref(null);
 const schedulesUsingRoute = ref([]);
-const errors = ref({ name: '', rpoints: '', generaL: '' });
-const DEFAULT_CENTER = { lat: 2.3114, lng: 102.3203 };
 const mapCenter = ref({ ...DEFAULT_CENTER });
-const busStops = computed(() => {
-    return rpoints.value.filter(rp => rp.type === 'bus_stop');
-});
+const sortColumn = ref('name');
+const sortDirection = ref('asc');
+const currentPage = ref(1);
+const itemsPerPage = ref(10);
+// Error state
+const errors = ref({ name: '', rpoints: '', generaL: '' });
+
 
 // Lifecycle hooks
 onMounted(() => {
@@ -53,13 +57,76 @@ onMounted(() => {
 });
 
 
-// Computed Properties
+// Computed properties
 const computedEventMarkers = computed(() => {
     if (editingPinpointIndex.value !== null) {
         const pinpoint = currentRoute.rpoints[editingPinpointIndex.value];
         return [pinpoint];
     }
     return currentRoute.rpoints.filter(s => s.type === 'event');
+});
+const busStops = computed(() => {
+    return rpoints.value.filter(rp => rp.type === 'bus_stop');
+});
+const sortedRoutes = computed(() => {
+    if (!sortColumn.value) return routes.value;
+
+    return [...routes.value].sort((a, b) => {
+        let valA = a[sortColumn.value];
+        let valB = b[sortColumn.value];
+
+        // Special handling for route points preview
+        if (sortColumn.value === 'rpoints') {
+            valA = getPreviewRPointNames((a.rpoints || []).map(id => ({ type: 'regular', id })));
+            valB = getPreviewRPointNames((b.rpoints || []).map(id => ({ type: 'regular', id })));
+        }
+
+        if (typeof valA === 'string') valA = valA.toLowerCase();
+        if (typeof valB === 'string') valB = valB.toLowerCase();
+
+        if (valA < valB) return sortDirection.value === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection.value === 'asc' ? 1 : -1;
+        return 0;
+    });
+});
+const paginatedRoutes = computed(() => {
+    const start = (currentPage.value - 1) * itemsPerPage.value;
+    const end = start + itemsPerPage.value;
+    return sortedRoutes.value.slice(start, end);
+});
+const totalItems = computed(() => sortedRoutes.value.length);
+const totalPages = computed(() => Math.ceil(totalItems.value / itemsPerPage.value));
+const showingFrom = computed(() => (currentPage.value - 1) * itemsPerPage.value + 1);
+const showingTo = computed(() => {
+    const to = currentPage.value * itemsPerPage.value;
+    return to > totalItems.value ? totalItems.value : to;
+});
+const showLeftEllipsis = computed(() => {
+    return currentPage.value > 3 && totalPages.value > 5;
+});
+const showRightEllipsis = computed(() => {
+    return currentPage.value < totalPages.value - 2 && totalPages.value > 5;
+});
+const visiblePages = computed(() => {
+    const pages = [];
+    const maxVisible = 3;
+    if (totalPages.value <= maxVisible) {
+        for (let i = 1; i <= totalPages.value; i++) {
+            pages.push(i);
+        }
+    } else {
+        let start = Math.max(1, currentPage.value - 1);
+        let end = Math.min(totalPages.value, currentPage.value + 1);
+        if (currentPage.value <= 2) {
+            end = maxVisible;
+        } else if (currentPage.value >= totalPages.value - 1) {
+            start = totalPages.value - maxVisible + 1;
+        }
+        for (let i = start; i <= end; i++) {
+            pages.push(i);
+        }
+    }
+    return pages;
 });
 
 
@@ -69,7 +136,6 @@ function createDefaultRoute() {
         routeId: "",
         name: "",
         rpoints: [],
-        created: null
     };
 }
 const getRPointName = (rPointData) => {
@@ -88,6 +154,19 @@ const getPreviewRPointNames = rPointList => {
     const firstThree = names.slice(0, 3);
     const last = names[names.length - 1];
     return [...firstThree, '...', last].join(', ');
+};
+const handleSort = (column) => {
+    if (column === sortColumn.value) {
+        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortColumn.value = column;
+        sortDirection.value = 'asc';
+    }
+};
+const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages.value) {
+        currentPage.value = page;
+    }
 };
 
 
@@ -169,8 +248,7 @@ async function saveRoute() {
                     const newRPointData = {
                         name: rPointData.name,
                         type: 'event',
-                        coordinates: geoCoordinates,
-                        created: new Date().toISOString()
+                        coordinates: geoCoordinates
                     };
                     batch.set(newRPointRef, { ...newRPointData, rpointId: newRPointRef.id });
                     routeRPoints.push(newRPointRef.id);
@@ -189,8 +267,7 @@ async function saveRoute() {
         const routeData = {
             name: currentRoute.name,
             type: routeType,
-            rpoints: routeRPoints,
-            created: currentRoute.created || new Date().toISOString()
+            rpoints: routeRPoints
         };
         if (editingRoute.value) {
             await updateDoc(doc(routeCollection, currentRoute.id), routeData);
@@ -374,29 +451,6 @@ function handleModeChange() {
 }
 
 
-// Formatter
-const formatDateTime = (dateInput) => {
-    let date;
-    if (dateInput && typeof dateInput.toDate === 'function') {
-        date = dateInput.toDate();
-    } else {
-        date = new Date(dateInput);
-    }
-    if (isNaN(date.getTime())) {
-        return '-';
-    }
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    let hours = date.getHours();
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12;
-
-    return `${year}-${month}-${day}, ${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
-};
-
-
 // Watchers
 watch(() => currentRoute.rpoints, () => {
     if (currentRoute.rpoints && currentRoute.rpoints.length > 0) {
@@ -408,6 +462,9 @@ watch(editingRoute, (newValue) => {
         rPointSelectionMode.value = 'regular';
     }
 });
+watch([sortColumn, sortDirection], () => {
+    currentPage.value = 1;
+});
 </script>
 
 
@@ -416,7 +473,7 @@ watch(editingRoute, (newValue) => {
     <div class="py-4 container-fluid">
         <div class="row">
             <div class="col-12">
-                <div class="card mb-4">
+                <div class="card">
                     <div class="card-header pb-0">
                         <div class="d-flex justify-content-between align-items-center">
                             <h6>Route List</h6>
@@ -425,35 +482,41 @@ watch(editingRoute, (newValue) => {
                             </argon-button>
                         </div>
                     </div>
-                    <div class="card-body pt-0 pb-2">
+                    <div class="card-body">
                         <div class="table-responsive p-0">
                             <table class="table align-items-center justify-content-center mb-0">
                                 <thead>
                                     <tr>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Route Name</th>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Route Points</th>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Type</th>
-                                        <th
-                                            class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
-                                            Created</th>
+                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
+                                            @click="handleSort('name')">
+                                            Route Name
+                                            <i v-if="sortColumn === 'name'" class="fas ms-1"
+                                                :class="sortDirection === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
+                                        </th>
+                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
+                                            @click="handleSort('rpoints')">
+                                            Route Points
+                                            <i v-if="sortColumn === 'rpoints'" class="fas ms-1"
+                                                :class="sortDirection === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
+                                        </th>
+                                        <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
+                                            @click="handleSort('type')">
+                                            Type
+                                            <i v-if="sortColumn === 'type'" class="fas ms-1"
+                                                :class="sortDirection === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
+                                        </th>
                                         <th
                                             class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2">
                                             Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-if="routes.length === 0">
+                                    <tr v-if="paginatedRoutes.length === 0">
                                         <td colspan="4" class="text-center py-4">
                                             No routes found
                                         </td>
                                     </tr>
-                                    <tr v-for="route in routes" :key="route.id">
+                                    <tr v-for="route in paginatedRoutes" :key="route.id">
                                         <td>
                                             <p class="text-sm font-weight-bold mb-0 px-2">{{ route.name }}</p>
                                         </td>
@@ -471,10 +534,6 @@ watch(editingRoute, (newValue) => {
                                             }">
                                                 {{ route.type }}
                                             </span>
-                                        </td>
-                                        <td>
-                                            <p class="text-sm font-weight-bold mb-0">{{ formatDateTime(route.created) }}
-                                            </p>
                                         </td>
                                         <td class="align-middle">
                                             <button class="btn btn-link text-secondary mb-0 px-1"
@@ -495,6 +554,50 @@ watch(editingRoute, (newValue) => {
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <!-- Pagination Controls -->
+                        <div class="d-flex justify-content-between align-items-center mt-3 ms-2">
+                            <div class="text-sm">
+                                Showing {{ showingFrom }}-{{ showingTo }} of {{ totalItems }} entries
+                            </div>
+                            <nav v-if="totalPages > 1">
+                                <ul class="pagination pagination-sm mb-0">
+                                    <li class="page-item" :class="{ disabled: currentPage === 1 }">
+                                        <button class="page-link" @click="goToPage(1)" title="First">
+                                            <i class="fas fa-angle-double-left"></i>
+                                        </button>
+                                    </li>
+                                    <li class="page-item" :class="{ disabled: currentPage === 1 }">
+                                        <button class="page-link" @click="goToPage(currentPage - 1)" title="Previous">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                    </li>
+
+                                    <li class="page-item disabled" v-if="showLeftEllipsis">
+                                        <span class="page-link">...</span>
+                                    </li>
+                                    <template v-for="page in visiblePages" :key="page">
+                                        <li class="page-item" :class="{ active: currentPage === page }">
+                                            <button class="page-link" @click="goToPage(page)">{{ page }}</button>
+                                        </li>
+                                    </template>
+                                    <li class="page-item disabled" v-if="showRightEllipsis">
+                                        <span class="page-link">...</span>
+                                    </li>
+
+                                    <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+                                        <button class="page-link" @click="goToPage(currentPage + 1)" title="Next">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </li>
+                                    <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+                                        <button class="page-link" @click="goToPage(totalPages)" title="Last">
+                                            <i class="fas fa-angle-double-right"></i>
+                                        </button>
+                                    </li>
+                                </ul>
+                            </nav>
                         </div>
                     </div>
 
@@ -542,7 +645,6 @@ watch(editingRoute, (newValue) => {
                                                 </div>
 
                                                 <div v-if="pendingPinpoint" class="mb-3">
-                                                    <!-- <label class="form-label">Name for your new event location:</label> -->
                                                     <div class="d-flex">
                                                         <argon-input type="text" v-model="pendingName"
                                                             placeholder="Name" class="me-2" />
@@ -610,16 +712,6 @@ watch(editingRoute, (newValue) => {
                                                     @marker-added="handleMarkerClick"
                                                     @marker-dragged="handlePinpointDrag"
                                                     class="mt-3 rpoint-page-map flex-grow-1" />
-                                                <!-- <GoogleMapPicker v-if="showAddRouteModal" :center="mapCenter"
-                                                    :existing-rpoints="rPointSelectionMode === 'regular' ? rpoints : []"
-                                                    :event-rpoints="computedEventMarkers"
-                                                    :enable-click-to-add="rPointSelectionMode === 'event' && editingPinpointIndex === null"
-                                                    :enable-draggable-markers="rPointSelectionMode === 'event'"
-                                                    :coordinates="rPointSelectionMode === 'event' && pendingPinpoint ? { lat: pendingPinpoint.latitude, lng: pendingPinpoint.longitude } : { lat: null, lng: null }"
-                                                    @marker-clicked="handleMarkerClick"
-                                                    @marker-added="handleMarkerClick"
-                                                    @marker-dragged="handlePinpointDrag"
-                                                    class="mt-3 rpoint-page-map flex-grow-1" /> -->
                                             </div>
                                         </div>
 
@@ -628,9 +720,6 @@ watch(editingRoute, (newValue) => {
                                                 {{ errors.general }}
                                             </div>
                                             <div class="d-flex justify-content-end gap-3 mt-2">
-                                                <argon-button type="button" color="secondary" @click="closeModal">
-                                                    Cancel
-                                                </argon-button>
                                                 <router-link :to="{
                                                     path: `/routes/${currentRoute.id}/schedule`,
                                                     query: { name: currentRoute.name }
@@ -672,10 +761,10 @@ watch(editingRoute, (newValue) => {
                                     <p v-else>Are you sure you want to delete this route?</p>
                                 </div>
                                 <div class="modal-footer">
-                                    <argon-button color="danger" @click="deleteRoute"
-                                        :disabled="schedulesUsingRoute.length > 0">Delete</argon-button>
                                     <argon-button color="secondary"
                                         @click="showDeleteModal = false">Cancel</argon-button>
+                                    <argon-button color="danger" @click="deleteRoute"
+                                        :disabled="schedulesUsingRoute.length > 0">Delete</argon-button>
                                 </div>
                             </div>
                         </div>
