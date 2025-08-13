@@ -5,6 +5,7 @@ import { scheduleCollection, routeCollection, rPointCollection, busDriverPairing
 import { query, where, doc, getDoc, getDocs, onSnapshot, addDoc, Timestamp, updateDoc, deleteDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { sendPushNotification } from "@/utils/firebaseNotifications";
+import { calculateRouteDurations } from '@/utils/googleMapsLoader.js';
 import BusDriverPairingTable from '@/views/components/BusDriverPairingTable.vue';
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
@@ -44,7 +45,6 @@ const newPairDriverId = ref('');
 const createScheduleForm = ref({
     days: [],
     time: '',
-    tripEndTime: '',
     type: '',
     routeId: '',
     rpoints: [],
@@ -111,8 +111,7 @@ onMounted(async () => {
             return {
                 rpointId: rPointId,
                 name: rPoint ? rPoint.name : 'Unknown Location',
-                expDepTime: '',
-                expArrTime: '',
+                planTime: '',
             };
         });
     } else {
@@ -123,7 +122,7 @@ onMounted(async () => {
     if (!route.query.openModal) {
         await fetchDriversAndBuses();
         await fetchPairings();
-        setupSchedulesListener();
+        setupRealtimeListeners();
     }
 });
 onUnmounted(() => {
@@ -199,6 +198,85 @@ const filteredSchedules = computed(() => {
 
 
 // Helper functions
+const setupRealtimeListeners = () => {
+    if (unsubscribeSchedules.value) {
+        unsubscribeSchedules.value();
+    }
+    const routeId = route.params.id;
+    if (!routeId) return;
+
+    const weekStart = new Date(currentWeekStart.value);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+
+    const startTimestamp = Timestamp.fromDate(weekStart);
+    const endTimestamp = Timestamp.fromDate(weekEnd);
+    const q = query(
+        scheduleCollection,
+        where('routeId', '==', routeId),
+        where('scheduledDatetime', '>=', startTimestamp),
+        where('scheduledDatetime', '<', endTimestamp),
+        where('type', 'in', ['incampus', 'outcampus', 'event'])
+    );
+
+    unsubscribeSchedules.value = onSnapshot(q, (querySnapshot) => {
+        const newSchedule = {};
+        weekDates.value.forEach(entry => {
+            newSchedule[entry.fullDate] = { incampus: {}, outcampus: {}, event: {} };
+        });
+        querySnapshot.forEach((doc) => {
+            const schedItem = doc.data();
+            if (!schedItem.scheduledDatetime?.toDate) return;
+            const scheduledDate = schedItem.scheduledDatetime.toDate();
+            if (scheduledDate < weekStart || scheduledDate >= weekEnd) return;
+            const d = schedItem.scheduledDatetime.toDate();
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            const scheduledFullDate = `${yyyy}-${mm}-${dd}`;
+            const type = schedItem.type.toLowerCase();
+            const timeKey = scheduledDate.toLocaleTimeString('en-US', {
+                hour: '2-digit', minute: '2-digit', hour12: false
+            });
+            if (!newSchedule[scheduledFullDate]) {
+                newSchedule[scheduledFullDate] = { incampus: {}, outcampus: {}, event: {} };
+            }
+            if (!newSchedule[scheduledFullDate][type]) {
+                newSchedule[scheduledFullDate][type] = {};
+            }
+            if (!newSchedule[scheduledFullDate][type][timeKey]) {
+                newSchedule[scheduledFullDate][type][timeKey] = [];
+            }
+            newSchedule[scheduledFullDate][type][timeKey].push({
+                id: doc.id,
+                type: type,
+                time: timeKey,
+                routeId: schedItem.routeId,
+                scheduledDatetime: schedItem.scheduledDatetime,
+                status: schedItem.status,
+                busDriverPairId: schedItem.busDriverPairId || null,
+                rpoints: schedItem.rpoints || [],
+                queueOpenMinutes: schedItem.queueOpenMinutes ?? 0,
+                queueCloseMinutes: schedItem.queueCloseMinutes ?? 0,
+                queueEnabled: schedItem.queueEnabled ?? false,
+                cancelReason: schedItem.cancelReason || null,
+            });
+        });
+        Object.values(newSchedule).forEach(dayObj => {
+            Object.values(dayObj).forEach(typeObj =>
+                Object.values(typeObj).forEach(arr => arr.sort((a, b) => a.time.localeCompare(b.time)))
+            );
+        });
+        schedules.value = newSchedule;
+    }, (error) => {
+        console.error("Error fetching schedules:", error);
+    });
+};
+const formatTime = (date) => {
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+};
 const formatDateTime = (timestamp) => {
     if (!timestamp) return '';
     return format(timestamp.toDate(), 'MMM d, yyyy h:mm a');
@@ -449,7 +527,7 @@ const openDatePicker = () => {
 const navigateToToday = () => {
     currentWeekStart.value = getStartOfWeek();
     selectedDate.value = getTodayLocalDate();
-    setupSchedulesListener();
+    setupRealtimeListeners();
 };
 const navigateToPreviousWeek = () => {
     const d = new Date(selectedDate.value + 'T00:00:00');
@@ -469,7 +547,7 @@ const handleDatePickerChange = (event) => {
     currentWeekStart.value = new Date(selected.setDate(selected.getDate() - dayOfWeek));
     currentWeekStart.value.setHours(0, 0, 0, 0);
     selectedDate.value = event.target.value;
-    setupSchedulesListener();
+    setupRealtimeListeners();
 };
 const getCurrentWeekDates = () => {
     const date = new Date(selectedDate.value + 'T00:00:00');
@@ -478,7 +556,7 @@ const getCurrentWeekDates = () => {
     monday.setDate(date.getDate() - dayOfWeek);
     monday.setHours(0, 0, 0, 0);
     currentWeekStart.value = monday;
-    setupSchedulesListener();
+    setupRealtimeListeners();
 };
 
 
@@ -522,53 +600,41 @@ const validateStep2 = () => {
         return validateEventScheduleForm();
     }
     const departureTime = createScheduleForm.value.time;
-    const endTime = createScheduleForm.value.tripEndTime;
     const rpoints = createScheduleForm.value.rpoints;
-    if (!departureTime || !endTime) {
-        errors.value.time = 'Please enter both a departure time and an end time for the trip.';
+    if (!departureTime) {
+        errors.value.time = 'Please enter both a departure time for the trip.';
         return false;
     }
-
+    if (rpoints.length > 0) {
+        createScheduleForm.value.rpoints[0].planTime = departureTime;
+    }
     const [depHour, depMinute] = departureTime.split(':').map(Number);
-    const [endHour, endMinute] = endTime.split(':').map(Number);
     const totalTripDepMinutes = depHour * 60 + depMinute;
-    const totalTripEndMinutes = endHour * 60 + endMinute;
-    if (totalTripDepMinutes >= totalTripEndMinutes) {
-        errors.value.time = 'The trip departure time must be earlier than the trip end time.';
-        return false;
-    }
     if (rpoints.length === 0) {
         errors.value.rpoints = 'This route has no defined stops.';
         return false;
     }
     for (let i = 0; i < rpoints.length; i++) {
-        if (!rpoints[i].expDepTime) {
-            errors.value.rpoints = `Please enter a departure time for all stops. Missing for ${rpoints[i].name}.`;
+        if (!rpoints[i].planTime) {
+            errors.value.rpoints = `Please enter a planned time for all stops. Missing for ${rpoints[i].name}.`;
             return false;
         }
-        const [currentRPointDepHour, currentRPointDepMinute] = rpoints[i].expDepTime.split(':').map(Number);
+        const [currentRPointDepHour, currentRPointDepMinute] = rpoints[i].planTime.split(':').map(Number);
         const totalCurrentRPointDepMinutes = currentRPointDepHour * 60 + currentRPointDepMinute;
         if (i === 0 && totalTripDepMinutes > totalCurrentRPointDepMinutes) {
-            errors.value.rpoints = `The first stop's departure time (${rpoints[i].expDepTime}) cannot be earlier than the trip departure time (${departureTime}).`;
+            errors.value.rpoints = `The first stop's planned time (${rpoints[i].planTime}) cannot be earlier than the trip departure time (${departureTime}).`;
             return false;
         }
 
         if (i < rpoints.length - 1) {
-            if (!rpoints[i + 1] || !rpoints[i + 1].expDepTime) {
-                errors.value.rpoints = `Please enter a departure time for all stops. Missing for ${rpoints[i + 1].name}.`;
+            if (!rpoints[i + 1] || !rpoints[i + 1].planTime) {
+                errors.value.rpoints = `Please enter a planned time for all stops. Missing for ${rpoints[i + 1].name}.`;
                 return false;
             }
-            const [nextRPointDepHour, nextRPointDepMinute] = rpoints[i + 1].expDepTime.split(':').map(Number);
+            const [nextRPointDepHour, nextRPointDepMinute] = rpoints[i + 1].planTime.split(':').map(Number);
             const totalNextRPointDepMinutes = nextRPointDepHour * 60 + nextRPointDepMinute;
             if (totalCurrentRPointDepMinutes >= totalNextRPointDepMinutes) {
-                errors.value.rpoints = `The departure time for ${rpoints[i].name} (${rpoints[i].expDepTime}) must be earlier than the next stop's departure time (${rpoints[i + 1].expDepTime}).`;
-                return false;
-            }
-            rpoints[i].expArrTime = rpoints[i + 1].expDepTime;
-        } else {
-            rpoints[i].expArrTime = createScheduleForm.value.tripEndTime;
-            if (totalCurrentRPointDepMinutes >= totalTripEndMinutes) {
-                errors.value.rpoints = `The departure time for ${rpoints[i].name} (${rpoints[i].expDepTime}) must be earlier than the trip end time (${endTime}).`;
+                errors.value.rpoints = `The planned time for ${rpoints[i].name} (${rpoints[i].planTime}) must be earlier than the next stop's planned time (${rpoints[i + 1].planTime}).`;
                 return false;
             }
         }
@@ -623,12 +689,20 @@ const validateStep3 = () => {
 };
 const validateEventScheduleForm = () => {
     clearErrors();
-
+    let isValid = true;
     if (!createScheduleForm.value.eventScheduledDateTime) {
         errors.value.eventScheduledDateTime = 'Please select a date and time for this event.';
-        return false;
+        isValid = false;
     }
-    return true;
+    const invalidRpoints = createScheduleForm.value.rpoints.some(rp => {
+        const rpoint = rpoints.value.find(r => r.id === rp.rpointId);
+        return !rpoint || !rpoint.name;
+    });
+    if (invalidRpoints) {
+        errors.value.rpoints = 'All stops must have valid location names for route calculation.';
+        isValid = false;
+    }
+    return isValid;
 };
 const validateAssignments = () => {
     clearErrors();
@@ -697,86 +771,77 @@ const fetchPairings = async () => {
         console.error("Error fetching pairings:", error);
     }
 };
-const setupSchedulesListener = () => {
-    if (unsubscribeSchedules.value) {
-        unsubscribeSchedules.value();
-    }
-    const routeId = route.params.id;
-    if (!routeId) return;
-
-    const weekStart = new Date(currentWeekStart.value);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 7);
-
-    const startTimestamp = Timestamp.fromDate(weekStart);
-    const endTimestamp = Timestamp.fromDate(weekEnd);
-    const q = query(
-        scheduleCollection,
-        where('routeId', '==', routeId),
-        where('scheduledDatetime', '>=', startTimestamp),
-        where('scheduledDatetime', '<', endTimestamp),
-        where('type', 'in', ['incampus', 'outcampus', 'event'])
-    );
-
-    unsubscribeSchedules.value = onSnapshot(q, (querySnapshot) => {
-        const newSchedule = {};
-        weekDates.value.forEach(entry => {
-            newSchedule[entry.fullDate] = { incampus: {}, outcampus: {}, event: {} };
-        });
-        querySnapshot.forEach((doc) => {
-            const schedItem = doc.data();
-            if (!schedItem.scheduledDatetime?.toDate) return;
-            const scheduledDate = schedItem.scheduledDatetime.toDate();
-            if (scheduledDate < weekStart || scheduledDate >= weekEnd) return;
-            const d = schedItem.scheduledDatetime.toDate();
-            const yyyy = d.getFullYear();
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const dd = String(d.getDate()).padStart(2, '0');
-            const scheduledFullDate = `${yyyy}-${mm}-${dd}`;
-            const type = schedItem.type.toLowerCase();
-            const timeKey = scheduledDate.toLocaleTimeString('en-US', {
-                hour: '2-digit', minute: '2-digit', hour12: false
-            });
-            if (!newSchedule[scheduledFullDate]) {
-                newSchedule[scheduledFullDate] = { incampus: {}, outcampus: {}, event: {} };
-            }
-            if (!newSchedule[scheduledFullDate][type]) {
-                newSchedule[scheduledFullDate][type] = {};
-            }
-            if (!newSchedule[scheduledFullDate][type][timeKey]) {
-                newSchedule[scheduledFullDate][type][timeKey] = [];
-            }
-            newSchedule[scheduledFullDate][type][timeKey].push({
-                id: doc.id,
-                type: type,
-                time: timeKey,
-                routeId: schedItem.routeId,
-                scheduledDatetime: schedItem.scheduledDatetime,
-                status: schedItem.status,
-                busDriverPairId: schedItem.busDriverPairId || null,
-                rpoints: schedItem.rpoints || [],
-                queueOpenMinutes: schedItem.queueOpenMinutes ?? 0,
-                queueCloseMinutes: schedItem.queueCloseMinutes ?? 0,
-                queueEnabled: schedItem.queueEnabled ?? false,
-                cancelReason: schedItem.cancelReason || null,
-            });
-        });
-        Object.values(newSchedule).forEach(dayObj => {
-            Object.values(dayObj).forEach(typeObj =>
-                Object.values(typeObj).forEach(arr => arr.sort((a, b) => a.time.localeCompare(b.time)))
-            );
-        });
-        schedules.value = newSchedule;
-    }, (error) => {
-        console.error("Error fetching schedules:", error);
-    });
-};
 const createSchedule = async () => {
     if (createScheduleForm.value.type === 'event') {
         if (!validateEventScheduleForm()) {
             isLoading.value = false;
             return;
         }
+        try {
+            const rpointCoordinates = createScheduleForm.value.rpoints.map(rp => {
+                const rpoint = rpoints.value.find(r => r.id === rp.rpointId);
+                if (rpoint && rpoint.coordinates) {
+                    const lat = rpoint.coordinates.latitude || rpoint.coordinates.lat;
+                    const lng = rpoint.coordinates.longitude || rpoint.coordinates.lng;
+                    if (typeof lat === 'number' && typeof lng === 'number') {
+                        return { latitude: lat, longitude: lng };
+                    }
+                }
+                return null;
+            }).filter(coord => coord !== null);
+
+            if (rpointCoordinates.length < 2) {
+                errors.value.general = "Not enough valid locations to calculate a route. Please check the route's stops.";
+                isLoading.value = false;
+                return;
+            }
+            const invalidCoords = rpointCoordinates.some(coord =>
+                isNaN(coord.latitude) || isNaN(coord.longitude) ||
+                coord.latitude < -90 || coord.latitude > 90 ||
+                coord.longitude < -180 || coord.longitude > 180
+            );
+            if (invalidCoords) {
+                errors.value.general = "Some locations have invalid coordinates. Please check the route's stops.";
+                isLoading.value = false;
+                return;
+            }
+
+            const durations = await calculateRouteDurations(rpointCoordinates);
+            const eventDateTime = new Date(createScheduleForm.value.eventScheduledDateTime);
+            let currentTime = new Date(eventDateTime);
+
+            const updatedRpoints = createScheduleForm.value.rpoints.map((rp, index) => {
+                if (index === 0) {
+                    const planTime = formatTime(currentTime);
+                    return { ...rp, planTime };
+                }
+                if (durations[index - 1]) {
+                    currentTime = new Date(currentTime.getTime() + durations[index - 1] * 1000);
+                }
+
+                const planTime = formatTime(currentTime);
+                return { ...rp, planTime };
+            });
+            const scheduleData = {
+                type: 'event',
+                routeId: createScheduleForm.value.routeId,
+                scheduledDatetime: Timestamp.fromDate(eventDateTime),
+                rpoints: updatedRpoints.map(rp => ({
+                    rpointId: rp.rpointId,
+                    planTime: rp.planTime,
+                    actTime: null,
+                    status: 'scheduled'
+                })),
+                status: 'scheduled'
+            };
+            await addDoc(scheduleCollection, scheduleData);
+            closeModal();
+        } catch (error) {
+            console.error("Error calculating route durations:", error);
+            errors.value.general = `Error calculating travel times: ${error.message}. Please check the location names and try again.`;
+            isLoading.value = false;
+        }
+        return;
     } else {
         if (currentStep.value === 2 && !validateStep2()) {
             isLoading.value = false;
@@ -813,10 +878,8 @@ const createSchedule = async () => {
         } else {
             baseScheduleData.rpoints = createScheduleForm.value.rpoints.map(rp => ({
                 rpointId: rp.rpointId,
-                expDepTime: rp.expDepTime,
-                expArrTime: rp.expArrTime,
-                actDepTime: null,
-                actArrTime: null,
+                planTime: rp.planTime, 
+                actTime: null,
                 latenessMinutes: 0,
                 status: 'scheduled',
                 queuedStudents: [],
@@ -925,10 +988,8 @@ const updateSchedule = async () => {
         } else {
             baseScheduleData.rpoints = createScheduleForm.value.rpoints.map(rp => ({
                 rpointId: rp.rpointId,
-                expDepTime: rp.expDepTime,
-                expArrTime: rp.expArrTime,
-                actDepTime: null,
-                actArrTime: null,
+                planTime: rp.planTime,
+                actTime: null,
                 latenessMinutes: 0,
                 status: 'scheduled',
                 queuedStudents: [],
@@ -1208,7 +1269,7 @@ const deleteOrCancelSchedule = async () => {
             await Promise.all(updatePromises);
         }
         closeModal();
-        setupSchedulesListener();
+        setupRealtimeListeners();
     } catch (error) {
         console.error("Error in deleteOrCancelSchedule:", error);
         errors.value.general = `Failed to ${actionType.value} the schedule. Please try again.`;
@@ -1228,7 +1289,7 @@ const deleteAssignment = async () => {
             if (modalAssignments.value[index]) {
                 modalAssignments.value[index].status = 'cancelled';
             }
-            setupSchedulesListener();
+            setupRealtimeListeners();
         } catch (error) {
             console.error("Error cancelling schedule:", error);
             errors.value.assignments = "Failed to cancel the schedule. Please try again.";
@@ -1266,7 +1327,7 @@ const deleteAssignment = async () => {
         if (modalAssignments.value.length === 0) {
             modalAssignments.value.push({ driverId: '', busId: '', pairId: null, scheduleId: null, status: '' });
         }
-        setupSchedulesListener();
+        setupRealtimeListeners();
     } catch (error) {
         console.error("Error deleting assignment:", error);
         errors.value.assignments = "Failed to remove the assignment. Please try again.";
@@ -1292,7 +1353,6 @@ const openCreateModal = (day) => {
     createScheduleForm.value = {
         days: [day],
         time: '',
-        tripEndTime: '',
         type: activeTab.value,
         routeId: currentRoute.value.id,
         rpoints: currentRoute.value.rpoints.map(rPointId => {
@@ -1300,8 +1360,7 @@ const openCreateModal = (day) => {
             return {
                 rpointId: rPointId,
                 name: rPoint ? rPoint.name : 'Unknown Location',
-                expDepTime: '',
-                expArrTime: '',
+                planTime: '',
             };
         }),
         queueEnabled: false,
@@ -1331,8 +1390,7 @@ const openModalForEvent = () => {
         routeId: currentRoute.value.id,
         rpoints: currentRoute.value.rpoints.map(rpointId => ({
             rpointId: rpointId,
-            expArrTime: null,
-            expDepTime: null,
+            planTime: null,
             status: 'scheduled',
         })),
         eventScheduledDateTime: null,
@@ -1539,8 +1597,8 @@ const goToDetailsStep = async () => {
     }
     const scheduleDataForUpdate = selectedScheduleGroup.value.find(s => s.status === 'scheduled');
     if (!scheduleDataForUpdate) {
-        console.error("Error: No schedule data available for update. Please select a schedule.");
-        errors.value.assignments = "No schedule selected for update details. Please try again.";
+        console.error("Error: No editable schedule found");
+        errors.value.assignments = "Only schedules with 'Scheduled' status can be edited. Please select a scheduled trip to update.";
         return;
     }
     const timeKey = scheduleDataForUpdate.scheduledDatetime.toDate().toLocaleTimeString('en-US', {
@@ -1552,14 +1610,12 @@ const goToDetailsStep = async () => {
     createScheduleForm.value = {
         days: [],
         time: timeKey,
-        tripEndTime: scheduleDataForUpdate.rpoints[scheduleDataForUpdate.rpoints.length - 1]?.expArrTime || '',
         type: scheduleDataForUpdate.type,
         routeId: scheduleDataForUpdate.routeId,
         rpoints: scheduleDataForUpdate.rpoints.map(rp => ({
             rpointId: rp.rpointId,
             name: rpoints.value.find(g => g.id === rp.rpointId)?.name || 'Unknown Location',
-            expDepTime: rp.expDepTime,
-            expArrTime: rp.expArrTime,
+            planTime: rp.planTime,
         })),
         queueEnabled: scheduleDataForUpdate.queueEnabled,
         queueOpenDays: queueOpen.days,
@@ -1594,7 +1650,6 @@ const closeModal = () => {
     createScheduleForm.value = {
         days: [],
         time: '',
-        tripEndTime: '',
         type: '',
         routeId: currentRoute.value.id,
         rpoints: currentRoute.value.rpoints.map(rPointId => {
@@ -1602,8 +1657,7 @@ const closeModal = () => {
             return {
                 rpointId: rPointId,
                 name: rPoint ? rPoint.name : 'Unknown Location',
-                expDepTime: '',
-                expArrTime: '',
+                planTime: '',
             };
         }),
         queueEnabled: false,
@@ -1708,7 +1762,7 @@ watch(() => route.query, async (newQuery) => {
     currentWeekStart.value = new Date(weekStart);
     selectedDate.value = date;
     await nextTick();
-    setupSchedulesListener();
+    setupRealtimeListeners();
 
     if (openModal === 'true' && time) {
         const checkSchedulesLoaded = () => {
@@ -1735,7 +1789,7 @@ watch(() => route.query, async (newQuery) => {
 }, { immediate: true });
 watch(activeTab, (newTab, oldTab) => {
     if (newTab !== oldTab) {
-        setupSchedulesListener();
+        setupRealtimeListeners();
     }
 });
 watch(currentWeekStart, () => { }, { immediate: true, deep: true });
@@ -2005,12 +2059,6 @@ watch(selectedDate, (newDate) => {
                                     Time:</label>
                                 <argon-input type="time" id="scheduleTime" v-model="createScheduleForm.time" required
                                     :disabled="!!selectedScheduleForUpdate" />
-                            </div>
-                            <div class="mb-3">
-                                <label for="tripEndTime" class="form-label">Trip End
-                                    Time:</label>
-                                <argon-input type="time" id="tripEndTime" v-model="createScheduleForm.tripEndTime"
-                                    required />
                                 <div v-if="errors.time" class="text-danger text-sm mt-1">
                                     {{ errors.time }}
                                 </div>
@@ -2020,7 +2068,7 @@ watch(selectedDate, (newDate) => {
                                 <argon-input type="text" :modelValue="capitalize(createScheduleForm.type)" disabled />
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">Stops & Departure Times:</label>
+                                <label class="form-label">Stops & Planned Times:</label>
                                 <div v-if="errors.rpoints" class="text-danger text-sm mt-1">
                                     {{ errors.rpoints }}
                                 </div>
@@ -2029,11 +2077,10 @@ watch(selectedDate, (newDate) => {
                                     <strong>{{ rpoint.name }}</strong>
                                     <div class="row g-2 mt-1">
                                         <div class="col-md-12">
-                                            <label :for="'expDepTime-' + index" class="form-label text-sm">Expected
-                                                Departure
-                                                Time:</label>
-                                            <argon-input type="time" :id="'expDepTime-' + index"
-                                                v-model="rpoint.expDepTime" required />
+                                            <label :for="'planTime-' + index" class="form-label text-sm">
+                                                Planned Time:</label>
+                                            <argon-input type="time" :id="'planTime-' + index"
+                                                v-model="rpoint.planTime" required />
                                         </div>
                                     </div>
                                 </div>
@@ -2362,8 +2409,8 @@ watch(selectedDate, (newDate) => {
                         <li v-for="rpoint in fullyCancelledSchedule.rpoints" :key="rpoint.rpointId"
                             class="list-group-item">
                             {{rpoints.find(rp => rp.id === rpoint.rpointId)?.name || 'Unknown Stop'}}
-                            <span v-if="rpoint.expDepTime" class="text-muted fst-italic ms-2">
-                                (Exp. Departure: {{ rpoint.expDepTime }})
+                            <span v-if="rpoint.planTime" class="text-muted fst-italic ms-2">
+                                (Planned Time: {{ rpoint.planTime }})
                             </span>
                         </li>
                     </ul>

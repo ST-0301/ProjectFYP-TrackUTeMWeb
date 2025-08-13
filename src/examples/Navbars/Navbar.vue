@@ -1,10 +1,15 @@
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import { useStore } from "vuex";
+import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { adminCollection } from "@/firebase";
+import { useRouter } from "vue-router";
 import Breadcrumbs from "../Breadcrumbs.vue";
 
 const showMenu = ref(false);
 const store = useStore();
+const router = useRouter();
 const minimizeSidebar = () => store.commit("sidebarMinimize");
 const toggleConfigurator = () => store.commit("toggleConfigurator");
 const closeMenu = () => {
@@ -12,6 +17,45 @@ const closeMenu = () => {
     showMenu.value = false;
   }, 100);
 };
+const user = ref(null);
+const userData = ref(null);
+const auth = getAuth();
+
+const fetchUserData = async (uid) => {
+  try {
+    const userDoc = await getDoc(doc(adminCollection, uid));
+    if (userDoc.exists()) {
+      userData.value = userDoc.data();
+    }
+  } catch (error) {
+    console.error("Error fetching user data:", error);
+  }
+};
+const getUserDisplayName = () => {
+  if (userData.value?.name) {
+    return userData.value.name;
+  }
+  return user.value?.email || '';
+};
+const handleLogout = async () => {
+  try {
+    await signOut(auth);
+    router.push("/signin");
+  } catch (error) {
+    console.error("Logout error:", error);
+  }
+};
+onMounted(() => {
+  onAuthStateChanged(auth, async (authUser) => {
+    if (authUser) {
+      user.value = authUser;
+      await fetchUserData(authUser.uid);
+    } else {
+      user.value = null;
+      userData.value = null;
+    }
+  });
+});
 </script>
 
 <template>
@@ -31,10 +75,21 @@ const closeMenu = () => {
         </div>
         <ul class="navbar-nav justify-content-end">
           <li class="nav-item d-flex align-items-center">
-            <router-link :to="{ name: 'Signin' }" class="px-0 nav-link font-weight-bold text-white" target="_blank">
+            <router-link v-if="!user" :to="{ name: 'Signin' }" class="px-0 nav-link font-weight-bold text-white">
               <i class="fa fa-user me-sm-2"></i>
               <span class="d-sm-inline d-none">Sign In</span>
             </router-link>
+            <router-link v-else :to="{ name: 'Profile' }" class="px-0 nav-link font-weight-bold text-white">
+              <i class="fa fa-user me-sm-2"></i>
+              <span class="d-sm-inline d-none">
+                {{ getUserDisplayName() }}
+              </span>
+            </router-link>
+
+            <a href="#" @click.prevent="handleLogout" class="px-0 nav-link font-weight-bold text-white">
+              <i class="fas fa-sign-out-alt me-sm-2"></i>
+              <span class="d-sm-inline d-none">Logout</span>
+            </a>
           </li>
           <li class="nav-item d-xl-none ps-3 d-flex align-items-center">
             <a href="#" @click="minimizeSidebar" class="p-0 nav-link text-white" id="iconNavbarSidenav">

@@ -114,6 +114,38 @@ const visiblePages = computed(() => {
 
 
 // Helper functions
+const setupRealtimeListeners = () => {
+    if (unsubscribeSchedules) unsubscribeSchedules();
+    const selectedDateObj = new Date(selectedDate.value);
+    selectedDateObj.setHours(0, 0, 0, 0);
+    const nextDayObj = new Date(selectedDate.value);
+    nextDayObj.setDate(nextDayObj.getDate() + 1);
+    nextDayObj.setHours(0, 0, 0, 0);
+    const startOfDayTimestamp = Timestamp.fromDate(selectedDateObj);
+    const endOfDayTimestamp = Timestamp.fromDate(nextDayObj);
+    const schedulesQuery = query(
+        scheduleCollection,
+        where("scheduledDatetime", ">=", startOfDayTimestamp),
+        where("scheduledDatetime", "<", endOfDayTimestamp)
+    );
+    unsubscribeSchedules = onSnapshot(
+        schedulesQuery,
+        (snapshot) => {
+            const rawSchedules = snapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+                scheduledDatetime:
+                    doc.data().scheduledDatetime instanceof Timestamp
+                        ? doc.data().scheduledDatetime
+                        : Timestamp.fromDate(new Date(doc.data().scheduledDatetime)),
+            }));
+            groupAndSetSchedules(rawSchedules);
+        },
+        (error) => {
+            console.error("Error listening to schedules:", error);
+        }
+    );
+};
 const getGroupedStatus = (schedules) => {
     if (!schedules || schedules.length === 0) {
         return "scheduled";
@@ -242,38 +274,6 @@ const groupAndSetSchedules = (rawSchedules) => {
         return timeA.getTime() - timeB.getTime();
     });
     schedules.value = groupedScheduleList;
-};
-const setupRealtimeListeners = () => {
-    if (unsubscribeSchedules) unsubscribeSchedules();
-    const selectedDateObj = new Date(selectedDate.value);
-    selectedDateObj.setHours(0, 0, 0, 0);
-    const nextDayObj = new Date(selectedDate.value);
-    nextDayObj.setDate(nextDayObj.getDate() + 1);
-    nextDayObj.setHours(0, 0, 0, 0);
-    const startOfDayTimestamp = Timestamp.fromDate(selectedDateObj);
-    const endOfDayTimestamp = Timestamp.fromDate(nextDayObj);
-    const schedulesQuery = query(
-        scheduleCollection,
-        where("scheduledDatetime", ">=", startOfDayTimestamp),
-        where("scheduledDatetime", "<", endOfDayTimestamp)
-    );
-    unsubscribeSchedules = onSnapshot(
-        schedulesQuery,
-        (snapshot) => {
-            const rawSchedules = snapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...doc.data(),
-                scheduledDatetime:
-                    doc.data().scheduledDatetime instanceof Timestamp
-                        ? doc.data().scheduledDatetime
-                        : Timestamp.fromDate(new Date(doc.data().scheduledDatetime)),
-            }));
-            groupAndSetSchedules(rawSchedules);
-        },
-        (error) => {
-            console.error("Error listening to schedules:", error);
-        }
-    );
 };
 const getStartOfWeek = (date) => {
     const dayOfWeek = (date.getDay() + 6) % 7;
@@ -439,7 +439,8 @@ watch([sortColumn, sortDirection, selectedDate], () => {
 
             <div class="card-body">
                 <div class="table-responsive p-0">
-                    <table class="table align-items-center justify-content-center mb-0" style="table-layout: fixed">
+                    <table class="table table-hover align-items-center justify-content-center mb-0"
+                        style="table-layout: fixed">
                         <thead>
                             <tr>
                                 <th class="text-uppercase text-xxs font-weight-bolder ps-2 cursor-pointer"

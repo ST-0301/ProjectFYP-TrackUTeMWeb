@@ -38,7 +38,6 @@ const createMarkerElement = (config) => {
     if (config.content) {
         const element = document.createElement('div');
         element.innerHTML = config.content;
-        console.log('Marker DOM element created:', element);
         return element;
     }
     // Default marker element
@@ -105,7 +104,6 @@ const updateMarkers = () => {
         // }
         if (markerConfig.clickable) {
             marker.addEventListener('gmp-click', () => {
-                console.log('Marker clicked in GoogleMap:', markerConfig); // Debug log
                 emit('marker-clicked', {
                     id: markerConfig.id,
                     position: markerConfig.position,

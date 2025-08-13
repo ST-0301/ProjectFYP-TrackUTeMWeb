@@ -8,7 +8,7 @@
         <div class="mb-4 col-lg-6 mb-lg-0">
           <div class="text-sm text-center copyright text-muted text-lg-start">
             ©
-            {{ new Date().getFullYear() }} Track-UTeM Web, Universiti Teknikal Malaysia Melaka
+            {{ new Date().getFullYear() }} Track-UTeM Web by ST
           </div>
         </div>
         <div class="col-lg-6">

@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
-import { busDriverPairingCollection, driverCollection, busCollection } from '@/firebase';
-import { getDocs } from 'firebase/firestore';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { scheduleCollection, busDriverPairingCollection, driverCollection, busCollection } from '@/firebase';
+import { getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import ArgonButton from "@/components/ArgonButton.vue";
 
 
@@ -22,6 +22,8 @@ const viewMode = ref('timeline');
 const busDriverPairings = ref([]);
 const drivers = ref([]);
 const buses = ref([]);
+const realtimeSchedules = ref([]);
+let unsubscribeSchedules = null;
 
 
 // Lifecycle hooks
@@ -34,12 +36,22 @@ onMounted(async () => {
   busDriverPairings.value = pairingsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
   drivers.value = driversSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
   buses.value = busesSnapshot.docs.map(b => ({ id: b.id, ...b.data() }));
+  setupRealtimeListeners();
+});
+onUnmounted(() => {
+  if (unsubscribeSchedules) {
+    unsubscribeSchedules();
+  }
 });
 
 
 // Computed properties
 const busAssignments = computed(() => {
-  return props.scheduleGroup
+  const schedulesToUse = realtimeSchedules.value.length > 0 ?
+    realtimeSchedules.value :
+    props.scheduleGroup;
+
+  return schedulesToUse
     .filter(schedule => ['in_progress', 'completed'].includes(schedule.status))
     .map(schedule => {
       let driverName = 'Unassigned';
@@ -57,8 +69,8 @@ const busAssignments = computed(() => {
         const lateness = rpoint.latenessMinutes || 0;
         return {
           name: rpointInfo.name,
-          plannedTime: rpoint.expArrTime,
-          actualTime: rpoint.actArrTime,
+          plannedTime: rpoint.planTime,
+          actualTime: rpoint.actTime,
           lateness: lateness
         };
       });
@@ -89,6 +101,26 @@ const busAssignments = computed(() => {
 
 
 // Helper functions
+const setupRealtimeListeners = () => { 
+  if (unsubscribeSchedules) {
+    unsubscribeSchedules();
+  }
+  const scheduleIds = props.scheduleGroup.map(s => s.id);
+  if (scheduleIds.length === 0) {
+    realtimeSchedules.value = [];
+    return;
+  }
+
+  const q = query(scheduleCollection, where('__name__', 'in', scheduleIds));
+  unsubscribeSchedules = onSnapshot(q, (querySnapshot) => {
+    realtimeSchedules.value = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  }, (error) => {
+    console.error("Error listening to schedule updates:", error);
+  });
+};
 const getDriverName = (driverId) => {
   const driver = drivers.value.find(d => d.id === driverId);
   return driver ? driver.name : 'Unassigned';

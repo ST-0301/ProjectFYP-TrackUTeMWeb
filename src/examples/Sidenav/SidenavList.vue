@@ -72,7 +72,7 @@ const getRoute = () => {
       <li class="nav-item">
         <sidenav-item to="/schedules" :class="getRoute() === 'schedulespage' ? 'active' : ''" navText="Schedules">
           <template v-slot:icon>
-            <i class="fas fa-route text-danger text-sm opacity-10"></i>
+            <i class="fas fa-calendar-alt text-warning text-sm opacity-10"></i>
           </template>
         </sidenav-item>
       </li>

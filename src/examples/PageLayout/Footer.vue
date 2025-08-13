@@ -4,91 +4,24 @@
     <div class="container">
       <div class="row">
         <div class="mx-auto mb-4 text-center col-lg-8">
-          <a
-            href="javascript:;"
-            target="_blank"
-            class="mb-2 text-secondary me-xl-5 me-3 mb-sm-0"
-          >
-            Company
+          <a href="https://www.utem.edu.my" target="_blank" class="mb-2 text-secondary me-xl-5 me-3 mb-sm-0">
+            UTEM Website
           </a>
-          <a
-            href="javascript:;"
-            target="_blank"
-            class="mb-2 text-secondary me-xl-5 me-3 mb-sm-0"
-          >
-            About Us
+          <a href="/privacy-policy" target="_blank" class="mb-2 text-secondary me-xl-5 me-3 mb-sm-0">
+            Privacy Policy
           </a>
-          <a
-            href="javascript:;"
-            target="_blank"
-            class="mb-2 text-secondary me-xl-5 me-3 mb-sm-0"
-          >
-            Team
+          <a href="/terms" target="_blank" class="mb-2 text-secondary me-xl-5 me-3 mb-sm-0">
+            Terms of Service
           </a>
-          <a
-            href="javascript:;"
-            target="_blank"
-            class="mb-2 text-secondary me-xl-5 me-3 mb-sm-0"
-          >
-            Products
-          </a>
-          <a
-            href="javascript:;"
-            target="_blank"
-            class="mb-2 text-secondary me-xl-5 me-3 mb-sm-0"
-          >
-            Blog
-          </a>
-          <a
-            href="javascript:;"
-            target="_blank"
-            class="mb-2 text-secondary me-xl-5 me-3 mb-sm-0"
-          >
-            Pricing
-          </a>
-        </div>
-        <div class="mx-auto mt-2 mb-4 text-center col-lg-8">
-          <a
-            href="javascript:;"
-            target="_blank"
-            class="text-secondary me-xl-4 me-4"
-          >
-            <span class="text-lg fab fa-dribbble"></span>
-          </a>
-          <a
-            href="javascript:;"
-            target="_blank"
-            class="text-secondary me-xl-4 me-4"
-          >
-            <span class="text-lg fab fa-twitter"></span>
-          </a>
-          <a
-            href="javascript:;"
-            target="_blank"
-            class="text-secondary me-xl-4 me-4"
-          >
-            <span class="text-lg fab fa-instagram"></span>
-          </a>
-          <a
-            href="javascript:;"
-            target="_blank"
-            class="text-secondary me-xl-4 me-4"
-          >
-            <span class="text-lg fab fa-pinterest"></span>
-          </a>
-          <a
-            href="javascript:;"
-            target="_blank"
-            class="text-secondary me-xl-4 me-4"
-          >
-            <span class="text-lg fab fa-github"></span>
+          <a href="/contact" target="_blank" class="mb-2 text-secondary me-xl-5 me-3 mb-sm-0">
+            Contact Support
           </a>
         </div>
       </div>
       <div class="row">
         <div class="mx-auto mt-1 text-center col-8">
           <p class="mb-0 text-secondary">
-            Copyright © {{ new Date().getFullYear() }} Soft by Creative Tim.
+            Copyright © {{ new Date().getFullYear() }} Track-UTeM Web by ST
           </p>
         </div>
       </div>

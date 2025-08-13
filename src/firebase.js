@@ -30,6 +30,7 @@ const storage = getStorage(app);
 const messaging = getMessaging(app);
 
 // Create a reference to the driver collection
+const adminCollection = collection(db, "admins");
 const driverCollection = collection(db, "drivers");
 const busCollection = collection(db, "buses");
 const rPointCollection = collection(db, "routePoints");
@@ -39,6 +40,7 @@ const busDriverPairingCollection = collection(db, "busDriverPairings");
 
 export {
   db,
+  adminCollection,
   driverCollection,
   busCollection,
   rPointCollection,
