@@ -1,60 +1,38 @@
 <script setup>
 import { ref, onMounted, reactive, watch, computed } from 'vue';
-import { updateDoc, setDoc, onSnapshot, doc, getDoc, getDocs, query, where, deleteDoc, writeBatch, GeoPoint } from 'firebase/firestore'; 
+import { updateDoc, setDoc, onSnapshot, doc, getDoc, getDocs, query, where, deleteDoc, writeBatch, GeoPoint } from 'firebase/firestore';
 import { routeCollection, rPointCollection, scheduleCollection, db } from '@/firebase';
 import GoogleMapPicker from '@/views/components/GoogleMapPicker.vue';
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
 
 
-// Constant
+// Constants
 const DEFAULT_CENTER = { lat: 2.3114, lng: 102.3203 };
 // Reactive state
+// Data state
 const routes = ref([]);
 const rpoints = ref([]);
+const currentRoute = reactive(createDefaultRoute());
+const routeToDelete = ref(null);
+const schedulesUsingRoute = ref([]);
+// UI state
 const showAddRouteModal = ref(false);
 const showDeleteModal = ref(false);
 const editingRoute = ref(false);
-const currentRoute = reactive(createDefaultRoute());
 const rPointSelectionMode = ref('regular');
 const pendingPinpoint = ref(null);
 const pendingRPointId = ref(null);
 const pendingName = ref('');
 const editingPinpointIndex = ref(null);
-const routeToDelete = ref(null);
-const schedulesUsingRoute = ref([]);
 const mapCenter = ref({ ...DEFAULT_CENTER });
+// Table state
 const sortColumn = ref('name');
 const sortDirection = ref('asc');
 const currentPage = ref(1);
 const itemsPerPage = ref(10);
 // Error state
 const errors = ref({ name: '', rpoints: '', generaL: '' });
-
-
-// Lifecycle hooks
-onMounted(() => {
-    const routesUnsub = onSnapshot(routeCollection, (snapshot) => {
-        routes.value = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-    });
-    const rPointUnsub = onSnapshot(rPointCollection, (snapshot) => {
-        rpoints.value = snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-                id: doc.id,
-                ...data,
-                coordinates: {
-                    latitude: data.coordinates?.latitude || data.coordinates?.lat,
-                    longitude: data.coordinates?.longitude || data.coordinates?.lng
-                }
-            };
-        });
-    });
-    return () => { routesUnsub(); rPointUnsub(); }
-});
 
 
 // Computed properties
@@ -130,6 +108,31 @@ const visiblePages = computed(() => {
 });
 
 
+// Lifecycle hooks
+onMounted(() => {
+    const routesUnsub = onSnapshot(routeCollection, (snapshot) => {
+        routes.value = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+    });
+    const rPointUnsub = onSnapshot(rPointCollection, (snapshot) => {
+        rpoints.value = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                ...data,
+                coordinates: {
+                    latitude: data.coordinates?.latitude || data.coordinates?.lat,
+                    longitude: data.coordinates?.longitude || data.coordinates?.lng
+                }
+            };
+        });
+    });
+    return () => { routesUnsub(); rPointUnsub(); }
+});
+
+
 // Helper functions
 function createDefaultRoute() {
     return {
@@ -154,19 +157,6 @@ const getPreviewRPointNames = rPointList => {
     const firstThree = names.slice(0, 3);
     const last = names[names.length - 1];
     return [...firstThree, '...', last].join(', ');
-};
-const handleSort = (column) => {
-    if (column === sortColumn.value) {
-        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
-    } else {
-        sortColumn.value = column;
-        sortDirection.value = 'asc';
-    }
-};
-const goToPage = (page) => {
-    if (page >= 1 && page <= totalPages.value) {
-        currentPage.value = page;
-    }
 };
 
 
@@ -357,6 +347,19 @@ const closeModal = () => {
     Object.assign(currentRoute, createDefaultRoute());
     errors.value = { name: '', rpoints: '', generaL: '' };
 };
+const handleSort = (column) => {
+    if (column === sortColumn.value) {
+        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortColumn.value = column;
+        sortDirection.value = 'asc';
+    }
+};
+const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages.value) {
+        currentPage.value = page;
+    }
+};
 function handleMarkerClick(rPointInfo) {
     if (rPointSelectionMode.value === 'regular' && rPointInfo.id) {
         const rpointId = rPointInfo.id;
@@ -523,8 +526,8 @@ watch([sortColumn, sortDirection], () => {
                                         <td>
                                             <p class="text-sm font-weight-bold mb-0">
                                                 {{getPreviewRPointNames((route.rpoints || []).map(id => ({
-                                                type: 'regular', id: id
-                                                }))) }}
+                                                    type: 'regular', id: id
+                                                })))}}
                                             </p>
                                         </td>
                                         <td>
@@ -611,6 +614,10 @@ watch([sortColumn, sortDirection], () => {
                                     <button type="button" class="btn-close" @click="closeModal"></button>
                                 </div>
                                 <div class="modal-body">
+                                    <div v-if="errors.general" class="alert alert-danger text-white mb-3">
+                                        {{ errors.general }}
+                                    </div>
+
                                     <form @submit.prevent="saveRoute" class="row g-4">
                                         <div class="col-md-6">
                                             <div class="mb-3">
@@ -618,7 +625,7 @@ watch([sortColumn, sortDirection], () => {
                                                 <argon-input v-model="currentRoute.name" type="text"
                                                     placeholder="Route name" />
                                                 <div v-if="errors.name" class="text-danger text-sm mt-1">{{ errors.name
-                                                    }}
+                                                }}
                                                 </div>
                                             </div>
 
@@ -668,7 +675,7 @@ watch([sortColumn, sortDirection], () => {
                                                         class="list-group-item d-flex justify-content-between align-items-center">
                                                         <div class="d-flex align-items-center">
                                                             <span class="badge bg-gradient-success me-2">{{ index + 1
-                                                                }}</span>
+                                                            }}</span>
                                                             <span v-if="rPointData.type === 'regular'">
                                                                 {{ getRPointName(rPointData) }}
                                                             </span>
@@ -715,23 +722,18 @@ watch([sortColumn, sortDirection], () => {
                                             </div>
                                         </div>
 
-                                        <div class="col-12 mt-2">
-                                            <div v-if="errors.general" class="text-danger text-sm text-sm mt-2">
-                                                {{ errors.general }}
-                                            </div>
-                                            <div class="d-flex justify-content-end gap-3 mt-2">
-                                                <router-link :to="{
-                                                    path: `/routes/${currentRoute.id}/schedule`,
-                                                    query: { name: currentRoute.name }
-                                                }" v-if="editingRoute">
-                                                    <argon-button type="button" color="info" class="me-2">
-                                                        Manage Schedule
-                                                    </argon-button>
-                                                </router-link>
-                                                <argon-button type="submit" color="success" variant="gradient">
-                                                    {{ editingRoute ? 'Update Route' : 'Add Route' }}
+                                        <div class="d-flex justify-content-end gap-3 mt-2">
+                                            <router-link :to="{
+                                                path: `/routes/${currentRoute.id}/schedule`,
+                                                query: { name: currentRoute.name }
+                                            }" v-if="editingRoute">
+                                                <argon-button type="button" color="info" class="me-2">
+                                                    Manage Schedule
                                                 </argon-button>
-                                            </div>
+                                            </router-link>
+                                            <argon-button type="submit" color="success" variant="gradient">
+                                                {{ editingRoute ? 'Update Route' : 'Add Route' }}
+                                            </argon-button>
                                         </div>
                                     </form>
                                 </div>
@@ -784,10 +786,12 @@ watch([sortColumn, sortDirection], () => {
     border-radius: 8px;
     border: 1px solid #dee2e6;
 }
+
 .rpoint-page-map :deep(.card) {
     height: 100%;
     margin-bottom: 0;
 }
+
 .rpoint-page-map :deep(.card-body) {
     height: calc(100% - 20px);
 }

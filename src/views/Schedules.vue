@@ -3,44 +3,29 @@ import { ref, onMounted, watch, onUnmounted, computed } from "vue";
 import { scheduleCollection, routeCollection, rPointCollection, driverCollection, busCollection } from "@/firebase";
 import { getDocs, query, where, Timestamp, onSnapshot } from "firebase/firestore";
 import { useRouter } from "vue-router";
-import OnTimePerformance from '@/views/components/OnTimePerformance.vue';
+import OnTimePerformanceCard from '@/views/components/OnTimePerformanceCard.vue';
 
 
 const router = useRouter();
 // Reactive state
+// Data state
 const routes = ref([]);
 const rpoints = ref([]);
 const drivers = ref([]);
 const buses = ref([]);
+const schedules = ref([]);
+const selectedScheduleGroup = ref(null);
+// UI state
 const datePicker = ref(null);
 const selectedDate = ref(new Date().toISOString().split("T")[0]);
-const schedules = ref([]);
 const showPerformanceModal = ref(false);
-const selectedScheduleGroup = ref(null);
+// Table state
 const sortColumn = ref("time");
 const sortDirection = ref("asc");
 const currentPage = ref(1);
 const itemsPerPage = ref(20);9
+// Subscription state
 let unsubscribeSchedules = null;
-
-
-// Lifecycle hooks
-onMounted(async () => {
-    const [routesSnap, rpointsSnap, driversSnap, busesSnap] = await Promise.all([
-        getDocs(routeCollection),
-        getDocs(rPointCollection),
-        getDocs(driverCollection),
-        getDocs(busCollection),
-    ]);
-    routes.value = routesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    rpoints.value = rpointsSnap.docs.map(r => ({ id: r.id, ...r.data() }));
-    drivers.value = driversSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    buses.value = busesSnap.docs.map((b) => ({ id: b.id, ...b.data() }));
-    setupRealtimeListeners();
-});
-onUnmounted(() => {
-    if (unsubscribeSchedules) unsubscribeSchedules();
-});
 
 
 // Computed properties
@@ -110,6 +95,25 @@ const visiblePages = computed(() => {
         }
     }
     return pages;
+});
+
+
+// Lifecycle hooks
+onMounted(async () => {
+    const [routesSnap, rpointsSnap, driversSnap, busesSnap] = await Promise.all([
+        getDocs(routeCollection),
+        getDocs(rPointCollection),
+        getDocs(driverCollection),
+        getDocs(busCollection),
+    ]);
+    routes.value = routesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    rpoints.value = rpointsSnap.docs.map(r => ({ id: r.id, ...r.data() }));
+    drivers.value = driversSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    buses.value = busesSnap.docs.map((b) => ({ id: b.id, ...b.data() }));
+    setupRealtimeListeners();
+});
+onUnmounted(() => {
+    if (unsubscribeSchedules) unsubscribeSchedules();
 });
 
 
@@ -282,23 +286,9 @@ const getStartOfWeek = (date) => {
     monday.setHours(0, 0, 0, 0);
     return monday;
 };
-const handleSort = (column) => {
-    if (column === sortColumn.value) {
-        sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
-    } else {
-        sortColumn.value = column;
-        sortDirection.value = "asc";
-    }
-};
-const latenessBadgeClass = (lateness) => {
-    if (lateness === null || lateness === undefined) return '';
-    if (lateness <= 5) return 'lateness-badge good';
-    if (lateness <= 15) return 'lateness-badge warning';
-    return 'lateness-badge bad';
-};
 
 
-// Date navigation functions
+// UI handlers
 const navigateToToday = () => {
     selectedDate.value = new Date().toISOString().split("T")[0];
 };
@@ -317,15 +307,6 @@ const navigateToNextday = () => {
 const handleDatePickerChange = (event) => {
     selectedDate.value = event.target.value;
 };
-const formatLocalDate = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-};
-
-
-// UI handlers
 const openScheduleModal = (schedule) => {
     const scheduledDate = new Date(selectedDate.value);
     router.push({
@@ -367,6 +348,14 @@ const openDatePicker = () => {
         datePicker.value.showPicker();
     }
 };
+const handleSort = (column) => {
+    if (column === sortColumn.value) {
+        sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
+    } else {
+        sortColumn.value = column;
+        sortDirection.value = "asc";
+    }
+};
 const goToPage = (page) => {
     if (page >= 1 && page <= totalPages.value) {
         currentPage.value = page;
@@ -375,6 +364,12 @@ const goToPage = (page) => {
 
 
 // Formatters
+const formatLocalDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+};
 const formatTimeString = (input) => {
     if (input instanceof Date) {
         return input.toLocaleTimeString("en-US", {
@@ -400,6 +395,12 @@ const statusClass = (status) => {
             unknown: "badge bg-danger",
         }[displayStatus] || "badge bg-danger"
     );
+};
+const latenessBadgeClass = (lateness) => {
+    if (lateness === null || lateness === undefined) return '';
+    if (lateness <= 5) return 'lateness-badge good';
+    if (lateness <= 15) return 'lateness-badge warning';
+    return 'lateness-badge bad';
 };
 
 
@@ -624,13 +625,14 @@ watch([sortColumn, sortDirection, selectedDate], () => {
                         class="text-center text-muted p-4">
                         No performance data available
                     </div>
-                    <OnTimePerformance v-else :scheduleGroup="selectedScheduleGroup" :rpoints="rpoints" />
+                    <OnTimePerformanceCard v-else :scheduleGroup="selectedScheduleGroup" :rpoints="rpoints" />
                 </div>
             </div>
         </div>
     </div>
     <div class="modal-backdrop fade show" v-if="showPerformanceModal"></div>
 </template>
+
 
 
 <style>

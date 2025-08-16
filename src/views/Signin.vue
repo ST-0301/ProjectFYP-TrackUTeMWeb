@@ -1,20 +1,31 @@
 <script setup>
 import { onBeforeUnmount, onBeforeMount, ref } from "vue";
 import { useStore } from "vuex";
-import { getAuth, signInWithEmailAndPassword, setPersistence, browserSessionPersistence, browserLocalPersistence } from "firebase/auth";
 import { useRouter } from "vue-router";
+import { adminCollection } from '@/firebase';
+import { getAuth, signInWithEmailAndPassword, setPersistence, browserSessionPersistence, browserLocalPersistence, signOut } from "firebase/auth";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import AppFooter from "@/examples/PageLayout/Footer.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
 import ArgonSwitch from "@/components/ArgonSwitch.vue";
 import ArgonButton from "@/components/ArgonButton.vue";
+
+
 const body = document.getElementsByTagName("body")[0];
 const store = useStore();
 const router = useRouter();
+// Reactive state
+// Data state
 const email = ref("");
 const password = ref("");
 const rememberMe = ref(false);
+// UI state
+const showPassword = ref(false);
+// Error state
 const errorMessage = ref("");
 
+
+// Lifecycle hooks
 onBeforeMount(() => {
   store.state.hideConfigButton = true;
   store.state.showNavbar = false;
@@ -29,6 +40,9 @@ onBeforeUnmount(() => {
   store.state.showFooter = true;
   body.classList.add("bg-gray-100");
 });
+
+
+// Validation functions
 const validateEmail = (email) => {
   const re = /^[^\s@]+@utem\.edu\.my$/;
   return re.test(email);
@@ -37,6 +51,9 @@ const validatePassword = (password) => {
   const re = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?#^;:,./])[A-Za-z\d@$!%*?#^;:,./]{8,}$/;
   return re.test(password);
 };
+
+
+// UI handlers
 const handleSignIn = async () => {
   errorMessage.value = "";
   if (!validateEmail(email.value)) {
@@ -50,8 +67,26 @@ const handleSignIn = async () => {
   try {
     const auth = getAuth();
     await setPersistence(auth, rememberMe.value ? browserLocalPersistence : browserSessionPersistence);
-    await signInWithEmailAndPassword(auth, email.value, password.value);
-    router.push("/driver-location");
+    const userCredential = await signInWithEmailAndPassword(auth, email.value, password.value);
+    const adminRef = doc(adminCollection, userCredential.user.uid);
+    const adminSnap = await getDoc(adminRef);
+
+    if (adminSnap.exists()) {
+      if (adminSnap.data().status === 'disabled') {
+        await auth.signOut();
+        errorMessage.value = "Your account has been disabled.";
+        return;
+      }
+      if (adminSnap.data().status === 'pending') {
+        await updateDoc(adminRef, { status: 'active' });
+      }
+      router.push("/realtime-location");
+    } else {
+      await signOut(auth);
+      errorMessage.value = "You do not have permission to access this system.";
+    }
+    // await signInWithEmailAndPassword(auth, email.value, password.value);
+    // router.push("/realtime-location");
   } catch (error) {
     console.error("Login error:", error);
     switch (error.code) {
@@ -99,14 +134,18 @@ const handleSignIn = async () => {
               <form role="form" @submit.prevent="handleSignIn">
                 <argon-input id="email" type="email" placeholder="Email" aria-label="Email" size="lg" v-model="email"
                   required />
-                <argon-input id="password" type="password" placeholder="Password" aria-label="Password" size="lg"
-                  v-model="password" required />
-
+                <div class="password-input-group">
+                  <argon-input id="password" :type="showPassword ? 'text' : 'password'" placeholder="Password"
+                    aria-label="Password" size="lg" class="password-field" v-model="password" required />
+                  <span class="password-toggle m-1" @click="showPassword = !showPassword">
+                    <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                  </span>
+                </div>
                 <div class="d-flex justify-content-between align-items-center mb-3">
                   <argon-switch id="rememberMe" name="remember-me" v-model="rememberMe">Remember me</argon-switch>
                   <a href="#" class="text-sm text-dark font-weight-bold">Forgot password?</a>
                 </div>
-                <div v-if="errorMessage" class="text-danger text-sm mt-3">
+                <div v-if="errorMessage" class="alert alert-danger text-white mt-3">
                   {{ errorMessage }}
                 </div>
 

@@ -6,7 +6,7 @@ import { query, where, doc, getDoc, getDocs, onSnapshot, addDoc, Timestamp, upda
 import { format } from 'date-fns';
 import { sendPushNotification } from "@/utils/firebaseNotifications";
 import { calculateRouteDurations } from '@/utils/googleMapsLoader.js';
-import BusDriverPairingTable from '@/views/components/BusDriverPairingTable.vue';
+import BusDriverPairingsTable from '@/views/components/BusDriverPairingsTable.vue';
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
 
@@ -29,7 +29,7 @@ const showCancelledScheduleModal = ref(false);
 const currentStep = ref(1);
 const currentSelectedDay = ref('');
 const currentSelectedFullDate = ref('');
-// Data
+// Data state
 const currentRoute = ref({});
 const rpoints = ref([]);
 const schedules = ref({});
@@ -602,11 +602,8 @@ const validateStep2 = () => {
     const departureTime = createScheduleForm.value.time;
     const rpoints = createScheduleForm.value.rpoints;
     if (!departureTime) {
-        errors.value.time = 'Please enter both a departure time for the trip.';
+        errors.value.time = 'Please enter a departure time for this trip.';
         return false;
-    }
-    if (rpoints.length > 0) {
-        createScheduleForm.value.rpoints[0].planTime = departureTime;
     }
     const [depHour, depMinute] = departureTime.split(':').map(Number);
     const totalTripDepMinutes = depHour * 60 + depMinute;
@@ -824,6 +821,7 @@ const createSchedule = async () => {
             });
             const scheduleData = {
                 type: 'event',
+                busDriverPairId: createScheduleForm.value.busDriverPairId || null,
                 routeId: createScheduleForm.value.routeId,
                 scheduledDatetime: Timestamp.fromDate(eventDateTime),
                 rpoints: updatedRpoints.map(rp => ({
@@ -834,7 +832,8 @@ const createSchedule = async () => {
                 })),
                 status: 'scheduled'
             };
-            await addDoc(scheduleCollection, scheduleData);
+            const newDocRef = await addDoc(scheduleCollection, scheduleData);
+            await updateDoc(newDocRef, { scheduleId: newDocRef.id });
             closeModal();
         } catch (error) {
             console.error("Error calculating route durations:", error);
@@ -857,7 +856,6 @@ const createSchedule = async () => {
             type: createScheduleForm.value.type,
             routeId: createScheduleForm.value.routeId,
             busDriverPairId: createScheduleForm.value.busDriverPairId || null,
-            actTripStartTime: null,
             status: 'scheduled',
             ...(createScheduleForm.value.type !== 'event' && {
                 queueOpenMinutes: convertToMinutes(
@@ -941,7 +939,8 @@ const createSchedule = async () => {
         message.value = `Saving ${schedulesToModify.length} schedule...`;
         const batchPromises = [];
         for (const scheduleData of schedulesToModify) {
-            batchPromises.push(addDoc(scheduleCollection, scheduleData));
+            const newDocRef = await addDoc(scheduleCollection, scheduleData);
+            batchPromises.push(updateDoc(newDocRef, { scheduleId: newDocRef.id }));
         }
         await Promise.all(batchPromises);
         closeModal();
@@ -967,7 +966,6 @@ const updateSchedule = async () => {
         const baseScheduleData = {
             type: createScheduleForm.value.type,
             routeId: createScheduleForm.value.routeId,
-            actTripStartTime: null,
             status: 'scheduled',
             ...(createScheduleForm.value.type !== 'event' && {
                 queueOpenMinutes: convertToMinutes(
@@ -1002,6 +1000,9 @@ const updateSchedule = async () => {
             );
             const batchPromises = schedulesToUpdate.map(schedule => {
                 const scheduleData = { ...baseScheduleData };
+                if (schedule.id) {
+                    scheduleData.scheduleId = schedule.id;
+                }
                 return updateDoc(doc(scheduleCollection, schedule.id), scheduleData);
             });
             await Promise.all(batchPromises);
@@ -1017,6 +1018,7 @@ const updateSchedule = async () => {
             const scheduleToUpdate = {
                 id: selectedScheduleForUpdate.value.id,
                 ...baseScheduleData,
+                scheduleId: selectedScheduleForUpdate.value.id,
                 scheduledDatetime: Timestamp.fromDate(scheduledDateTime),
             };
 
@@ -1160,10 +1162,10 @@ const executeScheduleUpdates = async (schedulesToDelete, schedulesToUpdate, newP
                 ...baseScheduleData,
                 busDriverPairId: pairId,
                 status: 'scheduled',
-                actTripStartTime: null,
             };
             delete newSchedule.id;
-            await addDoc(scheduleCollection, newSchedule);
+            const newDocRef = await addDoc(scheduleCollection, newSchedule);
+            await updateDoc(newDocRef, { scheduleId: newDocRef.id });
 
             if (newPair && newPair.driverId) {
                 notifications.push({
@@ -1799,6 +1801,11 @@ watch(selectedDate, (newDate) => {
     currentWeekStart.value = new Date(date.setDate(date.getDate() - dayOfWeek));
     currentWeekStart.value.setHours(0, 0, 0, 0);
 });
+watch(() => createScheduleForm.value.time, (newTime) => {
+    if (createScheduleForm.value.type !== 'event' && createScheduleForm.value.rpoints.length > 0) {
+        createScheduleForm.value.rpoints[0].planTime = newTime;
+    }
+});
 </script>
 
 
@@ -2079,8 +2086,8 @@ watch(selectedDate, (newDate) => {
                                         <div class="col-md-12">
                                             <label :for="'planTime-' + index" class="form-label text-sm">
                                                 Planned Time:</label>
-                                            <argon-input type="time" :id="'planTime-' + index"
-                                                v-model="rpoint.planTime" required />
+                                            <argon-input type="time" :id="'planTime-' + index" v-model="rpoint.planTime"
+                                                required />
                                         </div>
                                     </div>
                                 </div>
@@ -2150,7 +2157,7 @@ watch(selectedDate, (newDate) => {
                         </div>
                         <p class="mt-2">{{ message }}</p>
                     </div>
-                    <div v-if="errors.general" class="text-danger text-sm mt-3">
+                    <div v-if="errors.general" class="alert alert-danger text-white mb-3">
                         {{ errors.general }}
                     </div>
 
@@ -2288,7 +2295,7 @@ watch(selectedDate, (newDate) => {
                     <button type="button" class="btn-close" @click="showPairingModal = false"></button>
                 </div>
                 <div class="modal-body">
-                    <BusDriverPairingTable :pairings="busDriverPairings" :buses="buses" :drivers="drivers"
+                    <BusDriverPairingsTable :pairings="busDriverPairings" :buses="buses" :drivers="drivers"
                         @update-pairings="fetchPairings" />
                 </div>
             </div>

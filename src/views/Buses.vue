@@ -2,51 +2,31 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { deleteDoc, updateDoc, setDoc, onSnapshot, doc, getDocs, query, where } from 'firebase/firestore';
 import { busCollection, driverCollection, busDriverPairingCollection } from '@/firebase';
-import BusDriverPairingTable from '@/views/components/BusDriverPairingTable.vue';
+import BusDriverPairingsTable from '@/views/components/BusDriverPairingsTable.vue';
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
 
 
 // Reactive state
+// Data state
 const buses = ref([]);
 const drivers = ref([]);
 const busDriverPairings = ref([]);
+const currentBus = ref(createDefaultBus());
+const busToDelete = ref(null);
+const isBusPaired = ref(false);
+// UI state
 const showAddBusModal = ref(false);
 const showDeleteModal = ref(false);
 const showPairingModal = ref(false);
 const editingBus = ref(false);
-const currentBus = ref(createDefaultBus());
-const isBusPaired = ref(false);
-const busToDelete = ref(null);
+// Table state
 const sortColumn = ref('plateNumber');
 const sortDirection = ref('asc');
 const currentPage = ref(1);
 const itemsPerPage = ref(10);
 // Error state
 const errors = ref({ plateNumber: '', capacity: '', general: '' });
-
-
-// Lifecycle hooks
-onMounted(() => {
-    const unsubscribeBuses = onSnapshot(busCollection, (snapshot) => {
-        buses.value = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-    });
-    const unsubscribeDrivers = onSnapshot(driverCollection, (snapshot) => {
-        drivers.value = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-    });
-
-    fetchPairings();
-    return () => {
-        unsubscribeBuses();
-        unsubscribeDrivers();
-    };
-});
 
 
 // Computed properties
@@ -106,6 +86,29 @@ const visiblePages = computed(() => {
 });
 
 
+// Lifecycle hooks
+onMounted(() => {
+    const unsubscribeBuses = onSnapshot(busCollection, (snapshot) => {
+        buses.value = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+    });
+    const unsubscribeDrivers = onSnapshot(driverCollection, (snapshot) => {
+        drivers.value = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+    });
+
+    fetchPairings();
+    return () => {
+        unsubscribeBuses();
+        unsubscribeDrivers();
+    };
+});
+
+
 // Helper functions
 function createDefaultBus() {
     return {
@@ -126,15 +129,6 @@ async function checkExistingPlateNumber() {
     }
     return true;
 };
-const handleSort = (column) => {
-    if (column === sortColumn.value) {
-        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
-    } else {
-        sortColumn.value = column;
-        sortDirection.value = 'asc';
-    }
-};
-
 
 
 // Validation functions
@@ -267,6 +261,14 @@ const closeModal = () => {
         plateNumber: '',
         capacity: ''
     };
+};
+const handleSort = (column) => {
+    if (column === sortColumn.value) {
+        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortColumn.value = column;
+        sortDirection.value = 'asc';
+    }
 };
 const goToPage = (page) => {
     if (page >= 1 && page <= totalPages.value) {
@@ -432,6 +434,10 @@ watch([sortColumn, sortDirection], () => {
                                     <button type="button" class="btn-close" @click="closeModal"></button>
                                 </div>
                                 <div class="modal-body">
+                                    <div v-if="errors.general" class="alert alert-danger text-white mb-3">
+                                        {{ errors.general }}
+                                    </div>
+
                                     <form @submit.prevent="saveBus">
                                         <div class="mb-3">
                                             <label class="form-label">Plate Number</label>
@@ -457,9 +463,7 @@ watch([sortColumn, sortDirection], () => {
                                                 <option value="inactive">Inactive</option>
                                             </select>
                                         </div>
-                                        <div v-if="errors.general" class="text-danger text-sm text-sm mt-2">
-                                            {{ errors.general }}
-                                        </div>
+                                        
                                         <div class="d-flex justify-content-end gap-3 mt-4">
                                             <argon-button type="submit" color="success" variant="gradient">
                                                 {{ editingBus ? 'Update Bus' : 'Add Bus' }}
@@ -512,7 +516,7 @@ watch([sortColumn, sortDirection], () => {
                                     <button type="button" class="btn-close" @click="showPairingModal = false"></button>
                                 </div>
                                 <div class="modal-body">
-                                    <BusDriverPairingTable :pairings="busDriverPairings" :buses="buses"
+                                    <BusDriverPairingsTable :pairings="busDriverPairings" :buses="buses"
                                         :drivers="drivers" @update-pairings="fetchPairings" />
                                 </div>
                             </div>

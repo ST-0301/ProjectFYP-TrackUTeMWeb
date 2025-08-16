@@ -10,49 +10,25 @@ import GoogleMapPicker from '@/views/components/GoogleMapPicker.vue';
 // Constant
 const DEFAULT_CENTER = { lat: 2.3114, lng: 102.3203 };
 // Reactive state
+// Data state
 const rpoints = ref([]);
 const routes = ref([]);
-const showAddRPointModal = ref(false);
-const showDeleteModal = ref(false);
-const editingRPoint = ref(false);
 const currentRPoint = reactive(createDefaultRPoint());
 const rPointToDelete = ref(null);
 const routesUsingRPoint = ref([]);
+// UI state
+const showAddRPointModal = ref(false);
+const showDeleteModal = ref(false);
+const editingRPoint = ref(false);
 const mapLoaded = ref(false);
 const mapCenter = ref({ ...DEFAULT_CENTER });
+// Table state
 const sortColumn = ref('name');
 const sortDirection = ref('asc');
 const currentPage = ref(1);
 const itemsPerPage = ref(10);
 // Error state
 const errors = ref({ name: '', coordinates: '', general: '' });
-
-
-// Lifecycle hooks
-onMounted(() => {
-    const rPointUnsub = onSnapshot(rPointCollection, (snapshot) => {
-        rpoints.value = snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-                id: doc.id,
-                ...data,
-                coordinates: data.coordinates
-                    ? {
-                        latitude: data.coordinates.latitude,
-                        longitude: data.coordinates.longitude
-                    }
-                    : null
-            };
-        });
-    });
-    const routesUnsub = onSnapshot(routeCollection, (snapshot) => {
-        routes.value = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-    });
-    return () => { rPointUnsub(); routesUnsub(); }
-});
 
 
 // Computed properties
@@ -125,6 +101,33 @@ const visiblePages = computed(() => {
 });
 
 
+// Lifecycle hooks
+onMounted(() => {
+    const rPointUnsub = onSnapshot(rPointCollection, (snapshot) => {
+        rpoints.value = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                ...data,
+                coordinates: data.coordinates
+                    ? {
+                        latitude: data.coordinates.latitude,
+                        longitude: data.coordinates.longitude
+                    }
+                    : null
+            };
+        });
+    });
+    const routesUnsub = onSnapshot(routeCollection, (snapshot) => {
+        routes.value = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+    });
+    return () => { rPointUnsub(); routesUnsub(); }
+});
+
+
 // Helper functions
 function createDefaultRPoint() {
     return {
@@ -163,14 +166,6 @@ const getRouteNamesForRPoint = (rpointId) => {
         a.name.localeCompare(b.name)
     );
     return sortedRoutes.map(route => route.name).join(', ') || '-';
-};
-const handleSort = (column) => {
-    if (column === sortColumn.value) {
-        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
-    } else {
-        sortColumn.value = column;
-        sortDirection.value = 'asc';
-    }
 };
 const formatCoordinates = (coords) => {
     if (!coords) return 'N/A';
@@ -313,7 +308,15 @@ const closeModal = () => {
     showAddRPointModal.value = false;
     editingRPoint.value = false;
     Object.assign(currentRPoint, createDefaultRPoint());
-    errors.value = {name: '', coordinates: '', general: ''};
+    errors.value = { name: '', coordinates: '', general: '' };
+};
+const handleSort = (column) => {
+    if (column === sortColumn.value) {
+        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortColumn.value = column;
+        sortDirection.value = 'asc';
+    }
 };
 const goToPage = (page) => {
     if (page >= 1 && page <= totalPages.value) {
@@ -482,6 +485,10 @@ watch([sortColumn, sortDirection], () => {
                                     <button type="button" class="btn-close" @click="closeModal"></button>
                                 </div>
                                 <div class="modal-body">
+                                    <div v-if="errors.general" class="alert alert-danger text-white mb-3">
+                                        {{ errors.general }}
+                                    </div>
+
                                     <form @submit.prevent="saveRPoint" class="row g-4">
                                         <div class="col-md-6">
                                             <div class="mb-3">
@@ -489,7 +496,7 @@ watch([sortColumn, sortDirection], () => {
                                                 <argon-input v-model="currentRPoint.name" type="text"
                                                     placeholder="Location name" required />
                                                 <div v-if="errors.name" class="text-danger text-sm mt-1">{{ errors.name
-                                                    }}
+                                                }}
                                                 </div>
                                             </div>
 
@@ -561,15 +568,10 @@ watch([sortColumn, sortDirection], () => {
                                             </div>
                                         </div>
 
-                                        <div class="col-12 mt-2">
-                                            <div v-if="errors.general" class="text-danger text-sm text-sm mt-2">
-                                                {{ errors.general }}
-                                            </div>
-                                            <div class="d-flex justify-content-end gap-3 mt-2">
-                                                <argon-button type="submit" color="success" variant="gradient">
-                                                    {{ editingRPoint ? 'Update Location' : 'Add Location' }}
-                                                </argon-button>
-                                            </div>
+                                        <div class="d-flex justify-content-end gap-3 mt-2">
+                                            <argon-button type="submit" color="success" variant="gradient">
+                                                {{ editingRPoint ? 'Update Location' : 'Add Location' }}
+                                            </argon-button>
                                         </div>
                                     </form>
                                 </div>
@@ -604,7 +606,8 @@ watch([sortColumn, sortDirection], () => {
                                     <argon-button color="secondary"
                                         @click="showDeleteModal = false">Cancel</argon-button>
                                     <argon-button color="danger" @click="deleteRPoint"
-                                        :disabled="routesUsingRPoint.length > 0">Confirm Delete</argon-button>
+                                        :disabled="routesUsingRPoint.length > 0">Confirm
+                                        Delete</argon-button>
                                 </div>
                             </div>
                         </div>
@@ -624,10 +627,12 @@ watch([sortColumn, sortDirection], () => {
     border-radius: 8px;
     border: 1px solid #dee2e6;
 }
+
 .rpoint-page-map :deep(.card) {
     height: 100%;
     margin-bottom: 0;
 }
+
 .rpoint-page-map :deep(.card-body) {
     height: calc(100% - 20px);
 }

@@ -97,7 +97,7 @@ onMounted(() => {
             <div class="col-12">
                 <div class="card">
                     <div class="card-header pb-0">
-                        <h6>Real-time Driver Locations</h6>
+                        <h6>Realtime Driver Location</h6>
                     </div>
                     <div class="card-body p-0">
                         <GoogleMap :center="center" :zoom="zoom" :markers="driverMarkers" class="driver-map" />

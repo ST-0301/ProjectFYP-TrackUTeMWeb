@@ -2,6 +2,7 @@ import { createStore } from "vuex";
 
 export default createStore({
   state: {
+    isLoading: false,
     hideConfigButton: false,
     isPinned: false,
     showConfig: false,
@@ -18,6 +19,9 @@ export default createStore({
     layout: "default",
   },
   mutations: {
+    setLoading(state, isLoading) {
+      state.isLoading = isLoading;
+    },
     toggleConfigurator(state) {
       state.showConfig = !state.showConfig;
     },

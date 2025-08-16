@@ -8,6 +8,15 @@ const loader = new Loader({
   libraries: ["marker", "places", "geometry"],
 });
 
+let googleMapsPromise;
+
+export const loadGoogleMaps = () => {
+  if (!googleMapsPromise) {
+    googleMapsPromise = loader.load();
+  }
+  return googleMapsPromise;
+};
+
 export const calculateRouteDurations = async (waypoints) => {
    if (!window.google || !window.google.maps) {
      throw new Error("Google Maps API not loaded");

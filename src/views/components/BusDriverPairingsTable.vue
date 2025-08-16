@@ -23,16 +23,19 @@ const props = defineProps({
 });
 const emit = defineEmits(['update-pairings']);
 // Reactive state
-const showAddPairing = ref(false);
+// Data
 const editingPairing = ref(false);
 const newPairing = ref(createDefaultPairing());
 const pairingToDeactivate = ref(null);
+// UI state
 const showDeactivateModal = ref(false);
+const showAddPairing = ref(false);
+const showInactive = ref(false);
+// Table state
 const sortColumn = ref("isActive");
 const sortDirection = ref('asc');
 const currentPage = ref(1);
 const itemsPerPage = ref(4);
-const showInactive = ref(false);
 const lastActivePage = ref(1);
 // Error state
 const errors = ref({ general: '' });
@@ -135,46 +138,6 @@ function createDefaultPairing() {
         id: null
     };
 }
-const toggleAddPairingSection = () => {
-    showAddPairing.value = !showAddPairing.value;
-    if (!showAddPairing.value) {
-        cancelAddPairing();
-    }
-};
-const cancelAddPairing = () => {
-    newPairing.value = createDefaultPairing();
-    editingPairing.value = false;
-    showAddPairing.value = false;
-    errors.value.general = '';
-};
-const editPairing = (pairing) => {
-    newPairing.value = { ...pairing };
-    editingPairing.value = true;
-    showAddPairing.value = true;
-    errors.value.general = '';
-};
-const sortBy = (column) => {
-    if (sortColumn.value === column) {
-        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
-    } else {
-        sortColumn.value = column;
-        sortDirection.value = 'asc';
-    }
-};
-const toggleShowInactive = () => {
-    if (!showInactive.value) {
-        lastActivePage.value = currentPage.value;
-        showInactive.value = true;
-        sortColumn.value = 'isActive';
-        sortDirection.value = 'desc';
-        // currentPage.value = 1; 
-    } else {
-        showInactive.value = false;
-        sortColumn.value = null;
-        sortDirection.value = 'asc';
-        currentPage.value = lastActivePage.value;
-    }
-};
 
 
 // CRUD operations
@@ -235,10 +198,6 @@ const savePairing = async () => {
         errors.value.general = "An unexpected error occurred while saving the pairing. Please try again.";
     }
 };
-const promptDeactivatePairing = (id) => {
-    pairingToDeactivate.value = id;
-    showDeactivateModal.value = true;
-};
 const deactivatePairing = async () => {
     if (!pairingToDeactivate.value) return;
     try {
@@ -256,11 +215,55 @@ const deactivatePairing = async () => {
 };
 
 
-// UI handler
+// UI handlers
+const toggleAddPairingSection = () => {
+    showAddPairing.value = !showAddPairing.value;
+    if (!showAddPairing.value) {
+        cancelAddPairing();
+    }
+};
+const cancelAddPairing = () => {
+    newPairing.value = createDefaultPairing();
+    editingPairing.value = false;
+    showAddPairing.value = false;
+    errors.value.general = '';
+};
+const editPairing = (pairing) => {
+    newPairing.value = { ...pairing };
+    editingPairing.value = true;
+    showAddPairing.value = true;
+    errors.value.general = '';
+};
+const sortBy = (column) => {
+    if (sortColumn.value === column) {
+        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortColumn.value = column;
+        sortDirection.value = 'asc';
+    }
+};
+const toggleShowInactive = () => {
+    if (!showInactive.value) {
+        lastActivePage.value = currentPage.value;
+        showInactive.value = true;
+        sortColumn.value = 'isActive';
+        sortDirection.value = 'desc';
+        // currentPage.value = 1; 
+    } else {
+        showInactive.value = false;
+        sortColumn.value = null;
+        sortDirection.value = 'asc';
+        currentPage.value = lastActivePage.value;
+    }
+};
 const goToPage = (page) => {
     if (page >= 1 && page <= totalPages.value) {
         currentPage.value = page;
     }
+};
+const promptDeactivatePairing = (id) => {
+    pairingToDeactivate.value = id;
+    showDeactivateModal.value = true;
 };
 </script>
 
@@ -303,7 +306,7 @@ const goToPage = (page) => {
                     Status: {{ newPairing.isActive ? 'Active' : 'Inactive' }}
                 </ArgonSwitch>
             </div>
-            <div v-if="errors.general" class="text-danger text-sm mt-2">
+            <div v-if="errors.general" class="alert alert-danger text-white mb-3">
                 {{ errors.general }}
             </div>
             <div class="d-flex justify-content-end gap-3 mt-4">

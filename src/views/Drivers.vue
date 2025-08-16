@@ -2,13 +2,13 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { deleteDoc, updateDoc, setDoc, onSnapshot, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { driverCollection, busCollection, busDriverPairingCollection } from '@/firebase';
-import BusDriverPairingTable from '@/views/components/BusDriverPairingTable.vue';
+import BusDriverPairingsTable from '@/views/components/BusDriverPairingsTable.vue';
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
 import bcrypt from 'bcryptjs';
 
 
-// Constant
+// Constants
 const statusDisplay = {
     available: {
         label: "Available",
@@ -37,45 +37,26 @@ const statusDisplay = {
     }
 };
 // Reactive state
+// Data state
 const drivers = ref([]);
 const buses = ref([]);
 const busDriverPairings = ref([]);
-const showPassword = ref(false);
+const currentDriver = ref(createDefaultDriver());
+const driverToDelete = ref(null);
+// UI state
 const showAddDriverModal = ref(false);
 const showDeleteModal = ref(false);
 const showPairingModal = ref(false);
+const showPassword = ref(false);
 const editingDriver = ref(false);
-const currentDriver = ref(createDefaultDriver());
 const isDriverPaired = ref(false);
-const driverToDelete = ref(null);
+// Table state
 const sortColumn = ref('name');
 const sortDirection = ref('asc');
 const currentPage = ref(1);
 const itemsPerPage = ref(10);
 // Error state
 const errors = ref({ name: '', email: '', phone: '', licenseNumber: '', password: '', confirmPassword: '' });
-
-
-// Lifecycle hooks
-onMounted(() => {
-    const unsubscribeDrivers = onSnapshot(driverCollection, (snapshot) => {
-        drivers.value = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-    });
-    const unsubscribeBuses = onSnapshot(busCollection, (snapshot) => {
-        buses.value = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-    });
-    fetchPairings();
-    return () => {
-        unsubscribeDrivers();
-        unsubscribeBuses();
-    };
-});
 
 
 // Computed properties
@@ -136,6 +117,28 @@ const visiblePages = computed(() => {
 });
 
 
+// Lifecycle hooks
+onMounted(() => {
+    const unsubscribeDrivers = onSnapshot(driverCollection, (snapshot) => {
+        drivers.value = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+    });
+    const unsubscribeBuses = onSnapshot(busCollection, (snapshot) => {
+        buses.value = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+    });
+    fetchPairings();
+    return () => {
+        unsubscribeDrivers();
+        unsubscribeBuses();
+    };
+});
+
+
 // Helper functions
 function createDefaultDriver() {
     return {
@@ -172,15 +175,6 @@ async function checkExistingLicense() {
     }
     return true;
 };
-const handleSort = (column) => {
-    if (column === sortColumn.value) {
-        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
-    } else {
-        sortColumn.value = column;
-        sortDirection.value = 'asc';
-    }
-    currentPage.value = 1;
-};
 const formatLicenseInput = (event) => {
     currentDriver.value.licenseNumber = event.target.value
         .replace(/[^A-Za-z0-9]/g, '')
@@ -192,6 +186,15 @@ const formatPhoneInput = (event) => {
         .replace(/\D/g, '')
         .slice(0, 11);
     validatePhone();
+};
+const fetchPairings = async () => {
+    try {
+        const q = query(busDriverPairingCollection);
+        const snapshot = await getDocs(q);
+        busDriverPairings.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (error) {
+        console.error("Error fetching pairings:", error);
+    }
 };
 
 
@@ -332,15 +335,6 @@ const deleteOrDeactivateDriverAction = async () => {
         errors.value.general = error.message;
     }
 };
-const fetchPairings = async () => {
-    try {
-        const q = query(busDriverPairingCollection);
-        const snapshot = await getDocs(q);
-        busDriverPairings.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    } catch (error) {
-        console.error("Error fetching pairings:", error);
-    }
-};
 
 
 // UI handlers
@@ -388,6 +382,15 @@ const closeModal = () => {
         password: '',
         confirmPassword: ''
     };
+};
+const handleSort = (column) => {
+    if (column === sortColumn.value) {
+        sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortColumn.value = column;
+        sortDirection.value = 'asc';
+    }
+    currentPage.value = 1;
 };
 const goToPage = (page) => {
     if (page >= 1 && page <= totalPages.value) {
@@ -560,44 +563,49 @@ watch([sortColumn, sortDirection], () => {
                                     <button type="button" class="btn-close" @click="closeModal"></button>
                                 </div>
                                 <div class="modal-body">
+                                    <div v-if="errors.general" class="alert alert-danger text-white mb-3">
+                                        {{ errors.general }}
+                                    </div>
+
                                     <form @submit.prevent="saveDriver">
                                         <div class="mb-3">
-                                            <label class="form-label">Full Name</label>
-                                            <argon-input v-model="currentDriver.name" type="text"
+                                            <label for="driverName" class="form-label">Full Name</label>
+                                            <argon-input id="driverName" v-model="currentDriver.name" type="text"
                                                 placeholder="Driver name" @input="validateName" required />
                                             <div v-if="errors.name" class="text-danger text-sm mt-1">{{ errors.name }}
                                             </div>
                                         </div>
 
                                         <div class="mb-3">
-                                            <label class="form-label">Email</label>
-                                            <argon-input v-model="currentDriver.email" type="email" placeholder="Email"
-                                                @input="validateEmail" required />
+                                            <label for="driverEmail" class="form-label">Email</label>
+                                            <argon-input id="driverEmail" v-model="currentDriver.email" type="email"
+                                                placeholder="Email" @input="validateEmail" required />
                                             <div v-if="errors.email" class="text-danger text-sm mt-1">{{ errors.email }}
                                             </div>
                                         </div>
 
                                         <div class="mb-3">
-                                            <label class="form-label">Phone Number</label>
-                                            <argon-input v-model="currentDriver.phone" type="tel"
+                                            <label for="driverPhone" class="form-label">Phone Number</label>
+                                            <argon-input id="driverPhone" v-model="currentDriver.phone" type="tel"
                                                 placeholder="Phone number" @input="formatPhoneInput" required />
                                             <div v-if="errors.phone" class="text-danger text-sm mt-1">{{ errors.phone }}
                                             </div>
                                         </div>
 
                                         <div class="mb-3">
-                                            <label class="form-label">License Number</label>
-                                            <argon-input v-model="currentDriver.licenseNumber" type="text"
-                                                placeholder="License number" @input="formatLicenseInput" required />
+                                            <label for="driverLicense" class="form-label">License Number</label>
+                                            <argon-input id="driverLicense" v-model="currentDriver.licenseNumber"
+                                                type="text" placeholder="License number" @input="formatLicenseInput"
+                                                required />
                                             <div v-if="errors.licenseNumber" class="text-danger text-sm mt-1">{{
                                                 errors.licenseNumber }}</div>
                                         </div>
 
                                         <!-- Password fields (only for new driver) -->
                                         <div class="mb-3" v-if="!editingDriver">
-                                            <label class="form-label">Password</label>
+                                            <label for="driverPassword" class="form-label">Password</label>
                                             <div class="password-input-group">
-                                                <argon-input v-model="currentDriver.password"
+                                                <argon-input id="driverPassword" v-model="currentDriver.password"
                                                     :type="showPassword ? 'text' : 'password'"
                                                     placeholder="Set driver's password" @input="validatePassword"
                                                     class="password-field" required />
@@ -611,9 +619,11 @@ watch([sortColumn, sortDirection], () => {
                                         </div>
 
                                         <div class="mb-3" v-if="!editingDriver">
-                                            <label class="form-label">Confirm Password</label>
+                                            <label for="driverConfirmPassword" class="form-label">Confirm
+                                                Password</label>
                                             <div class="password-input-group">
-                                                <argon-input v-model="currentDriver.confirmPassword"
+                                                <argon-input id="driverConfirmPassword"
+                                                    v-model="currentDriver.confirmPassword"
                                                     :type="showPassword ? 'text' : 'password'"
                                                     placeholder="Confirm driver's password"
                                                     @input="validateConfirmPassword" class="password-field" required />
@@ -625,9 +635,6 @@ watch([sortColumn, sortDirection], () => {
                                                 errors.confirmPassword }}</div>
                                         </div>
 
-                                        <div v-if="errors.general" class="text-danger text-sm text-sm mt-2">
-                                            {{ errors.general }}
-                                        </div>
                                         <div class="d-flex justify-content-end gap-3 mt-4">
                                             <argon-button type="submit" color="success" variant="gradient">
                                                 {{ editingDriver ? 'Update Driver' : 'Add Driver' }}
@@ -680,7 +687,7 @@ watch([sortColumn, sortDirection], () => {
                                     <button type="button" class="btn-close" @click="showPairingModal = false"></button>
                                 </div>
                                 <div class="modal-body">
-                                    <BusDriverPairingTable :pairings="busDriverPairings" :buses="buses"
+                                    <BusDriverPairingsTable :pairings="busDriverPairings" :buses="buses"
                                         :drivers="drivers" @update-pairings="fetchPairings" />
                                 </div>
                             </div>

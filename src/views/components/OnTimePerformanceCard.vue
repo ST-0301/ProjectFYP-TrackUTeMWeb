@@ -17,32 +17,16 @@ const props = defineProps({
   }
 });
 // Reactive state
-const expandedId = ref(null);
-const viewMode = ref('timeline');
+// Data state
 const busDriverPairings = ref([]);
 const drivers = ref([]);
 const buses = ref([]);
 const realtimeSchedules = ref([]);
+// UI state
+const expandedId = ref(null);
+const viewMode = ref('timeline');
+// Subscription state
 let unsubscribeSchedules = null;
-
-
-// Lifecycle hooks
-onMounted(async () => {
-  const [pairingsSnapshot, driversSnapshot, busesSnapshot] = await Promise.all([
-    getDocs(busDriverPairingCollection),
-    getDocs(driverCollection),
-    getDocs(busCollection)
-  ]);
-  busDriverPairings.value = pairingsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-  drivers.value = driversSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-  buses.value = busesSnapshot.docs.map(b => ({ id: b.id, ...b.data() }));
-  setupRealtimeListeners();
-});
-onUnmounted(() => {
-  if (unsubscribeSchedules) {
-    unsubscribeSchedules();
-  }
-});
 
 
 // Computed properties
@@ -97,6 +81,25 @@ const busAssignments = computed(() => {
         status: schedule.status
       };
     });
+});
+
+
+// Lifecycle hooks
+onMounted(async () => {
+  const [pairingsSnapshot, driversSnapshot, busesSnapshot] = await Promise.all([
+    getDocs(busDriverPairingCollection),
+    getDocs(driverCollection),
+    getDocs(busCollection)
+  ]);
+  busDriverPairings.value = pairingsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  drivers.value = driversSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  buses.value = busesSnapshot.docs.map(b => ({ id: b.id, ...b.data() }));
+  setupRealtimeListeners();
+});
+onUnmounted(() => {
+  if (unsubscribeSchedules) {
+    unsubscribeSchedules();
+  }
 });
 
 

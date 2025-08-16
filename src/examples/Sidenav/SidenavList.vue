@@ -29,34 +29,18 @@ const getRoute = () => {
       </li> -->
 
       <li class="nav-item">
-        <sidenav-item to="/driver-location" :class="getRoute() === 'driver-location' ? 'active' : ''"
-          navText="Driver Location">
-          <template v-slot:icon>
-            <i class="fas fa-map-marker-alt text-info text-sm opacity-10"></i>
-          </template>
-        </sidenav-item>
-      </li>
-
-      <li class="nav-item">
-        <sidenav-item to="/drivers" :class="getRoute() === 'drivers' ? 'active' : ''" navText="Drivers">
-          <template v-slot:icon>
-            <i class="fas fa-user-tie text-warning text-sm opacity-10"></i>
-          </template>
-        </sidenav-item>
-      </li>
-
-      <li class="nav-item">
-        <sidenav-item to="/buses" :class="getRoute() === 'buses' ? 'active' : ''" navText="Buses">
-          <template v-slot:icon>
-            <i class="fas fa-bus text-info text-sm opacity-10"></i>
-          </template>
-        </sidenav-item>
-      </li>
-
-      <li class="nav-item">
-        <sidenav-item to="/locations" :class="getRoute() === 'routePoints' ? 'active' : ''" navText="Locations">
+        <sidenav-item to="/realtime-location" :class="getRoute() === 'realtime-location' ? 'active' : ''"
+          navText="Realtime Location">
           <template v-slot:icon>
             <i class="fas fa-map-marker-alt text-success text-sm opacity-10"></i>
+          </template>
+        </sidenav-item>
+      </li>
+
+      <li class="nav-item">
+        <sidenav-item to="/schedules" :class="getRoute() === 'schedulespage' ? 'active' : ''" navText="Schedules">
+          <template v-slot:icon>
+            <i class="fas fa-calendar-alt text-warning text-sm opacity-10"></i>
           </template>
         </sidenav-item>
       </li>
@@ -70,16 +54,32 @@ const getRoute = () => {
       </li>
 
       <li class="nav-item">
-        <sidenav-item to="/schedules" :class="getRoute() === 'schedulespage' ? 'active' : ''" navText="Schedules">
+        <sidenav-item to="/stops" :class="getRoute() === 'routePoints' ? 'active' : ''" navText="Stops">
           <template v-slot:icon>
-            <i class="fas fa-calendar-alt text-warning text-sm opacity-10"></i>
+            <i class="fas fa-map-marker-alt text-black-50 text-sm opacity-10"></i>
+          </template>
+        </sidenav-item>
+      </li>
+
+      <li class="nav-item">
+        <sidenav-item to="/drivers" :class="getRoute() === 'drivers' ? 'active' : ''" navText="Drivers">
+          <template v-slot:icon>
+            <i class="fas fa-user-tie text-primary text-sm opacity-10"></i>
+          </template>
+        </sidenav-item>
+      </li>
+
+      <li class="nav-item">
+        <sidenav-item to="/buses" :class="getRoute() === 'buses' ? 'active' : ''" navText="Buses">
+          <template v-slot:icon>
+            <i class="fas fa-bus text-info text-sm opacity-10"></i>
           </template>
         </sidenav-item>
       </li>
 
       <li class="mt-3 nav-item">
         <h6 class="text-xs ps-4 text-uppercase font-weight-bolder opacity-6">
-          ACCOUNT PAGES
+          ACCOUNT PAGE
         </h6>
       </li>
 
@@ -91,21 +91,21 @@ const getRoute = () => {
         </sidenav-item>
       </li>
 
-      <li class="nav-item">
+      <!-- <li class="nav-item">
         <sidenav-item to="/signin" :class="getRoute() === 'signin' ? 'active' : ''" navText="Sign In">
           <template v-slot:icon>
             <i class="ni ni-single-copy-04 text-danger text-sm opacity-10"></i>
           </template>
         </sidenav-item>
-      </li>
+      </li> -->
 
-      <li class="nav-item">
+      <!-- <li class="nav-item">
         <sidenav-item to="/signup" :class="getRoute() === 'signup' ? 'active' : ''" navText="Sign Up">
           <template v-slot:icon>
             <i class="ni ni-collection text-info text-sm opacity-10"></i>
           </template>
         </sidenav-item>
-      </li>
+      </li> -->
     </ul>
   </div>
 </template>

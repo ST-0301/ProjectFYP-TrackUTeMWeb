@@ -1,8 +1,9 @@
-S<!-- GoogleMap.vue -->
+<!-- GoogleMap.vue -->
 <script setup>
 /* global google */
 import { ref, onMounted, watch, onUnmounted, shallowRef } from 'vue';
-import loader from '@/utils/googleMapsLoader.js';
+import { loadGoogleMaps } from '@/utils/googleMapsLoader';
+// import loader from '@/utils/googleMapsLoader.js';
 import ArgonAlert from "@/components/ArgonAlert.vue";
 
 
@@ -56,7 +57,9 @@ const createMarkerElement = (config) => {
 // Map initialization
 const initializeMap = async () => {
     try {
-        await loader.load();
+        await loadGoogleMaps();
+
+        // await loader.load();
         const { AdvancedMarkerElement: Marker } = await google.maps.importLibrary("marker");
         AdvancedMarkerElement.value = Marker;
 
