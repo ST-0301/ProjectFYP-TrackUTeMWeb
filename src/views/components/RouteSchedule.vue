@@ -18,7 +18,7 @@ const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'
 // Date/Time related
 const currentWeekStart = ref(new Date());
 const datePicker = ref(null);
-const selectedDate = ref(new Date().toISOString().split('T')[0]);
+const selectedDate = ref('');
 // UI state
 const activeTab = ref('incampus');
 const showCreateScheduleModal = ref(false);

@@ -17,7 +17,7 @@ const schedules = ref([]);
 const selectedScheduleGroup = ref(null);
 // UI state
 const datePicker = ref(null);
-const selectedDate = ref(new Date().toISOString().split("T")[0]);
+const selectedDate = ref('');
 const showPerformanceModal = ref(false);
 // Table state
 const sortColumn = ref("time");
@@ -110,6 +110,7 @@ onMounted(async () => {
     rpoints.value = rpointsSnap.docs.map(r => ({ id: r.id, ...r.data() }));
     drivers.value = driversSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
     buses.value = busesSnap.docs.map((b) => ({ id: b.id, ...b.data() }));
+    selectedDate.value = getTodayLocalDate();
     setupRealtimeListeners();
 });
 onUnmounted(() => {
@@ -289,8 +290,16 @@ const getStartOfWeek = (date) => {
 
 
 // UI handlers
+const getTodayLocalDate = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
 const navigateToToday = () => {
-    selectedDate.value = new Date().toISOString().split("T")[0];
+    selectedDate.value = getTodayLocalDate();
+    setupRealtimeListeners();
 };
 const navigateToYesterday = () => {
     const d = new Date(selectedDate.value);

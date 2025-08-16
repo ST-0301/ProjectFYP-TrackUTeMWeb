@@ -7,12 +7,10 @@ import Drivers from "../views/Drivers.vue";
 import Buses from "../views/Buses.vue";
 import RoutePoints from "../views/RoutePoints.vue";
 import Routes from "../views/Routes.vue";
-// import Schedule from "../views/components/Schedule-copy.vue";
-import Schedule from "../views/components/Schedule-copy2.vue";
+import Schedule from "../views/components/RouteSchedule.vue";
 import Schedules from "../views/Schedules.vue";
 
 import Profile from "../views/Profile.vue";
-// import Signup from "../views/Signup.vue";
 import Signin from "../views/Signin.vue";
 
 const routes = [
