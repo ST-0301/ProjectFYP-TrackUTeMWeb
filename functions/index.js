@@ -27,7 +27,9 @@ exports.onLatenessUpdate = onDocumentUpdated(
       const rpointsBefore = JSON.stringify(previousData.rpoints);
 
       if (rpointsBefore === rpointsAfter) {
-        console.log("Update detected, but rpoints did not change. Exiting function.");
+        console.log(
+            "Update detected, but rpoints did not change. Exiting function.",
+        );
         return null;
       }
 
@@ -44,10 +46,14 @@ exports.onLatenessUpdate = onDocumentUpdated(
       let updatedRPoint = null;
       let updatedRPointIndex = -1;
       for (let i = 0; i < scheduleData.rpoints.length; i++) {
-        const oldLateness = previousData.rpoints[i] ? previousData.rpoints[i].latenessMinutes : 0;
+        const oldLateness = previousData.rpoints[i] ?
+                previousData.rpoints[i].latenessMinutes :
+                0;
         const newLateness = scheduleData.rpoints[i].latenessMinutes;
 
-        console.log(`Comparing index ${i}: oldLateness=${oldLateness}, newLateness=${newLateness}`);
+        console.log(
+            `Comparing index ${i}: oldLateness=${oldLateness}, newLateness=${newLateness}`,
+        );
 
         if (newLateness !== oldLateness) {
           updatedRPoint = scheduleData.rpoints[i];
@@ -64,16 +70,27 @@ exports.onLatenessUpdate = onDocumentUpdated(
       const latenessMinutes = updatedRPoint.latenessMinutes;
 
       if (latenessMinutes < 5) {
-        console.log(`Lateness of ${latenessMinutes} minutes is below the threshold. Ignoring.`);
+        console.log(
+            `Lateness of ${latenessMinutes} minutes is below the threshold. Ignoring.`,
+        );
         return;
       }
 
       const studentsToNotify = new Set();
       if (updatedRPointIndex < scheduleData.rpoints.length - 1) {
-        for (let i = updatedRPointIndex + 1; i < scheduleData.rpoints.length; i++) {
+        for (
+          let i = updatedRPointIndex + 1;
+          i < scheduleData.rpoints.length;
+          i++
+        ) {
           const subsequentRPoint = scheduleData.rpoints[i];
-          if (subsequentRPoint.queuedStudents && subsequentRPoint.queuedStudents.length > 0) {
-            subsequentRPoint.queuedStudents.forEach((studentId) => studentsToNotify.add(studentId));
+          if (
+            subsequentRPoint.queuedStudents &&
+          subsequentRPoint.queuedStudents.length > 0
+          ) {
+            subsequentRPoint.queuedStudents.forEach((studentId) =>
+              studentsToNotify.add(studentId),
+            );
           }
         }
       }
@@ -86,7 +103,11 @@ exports.onLatenessUpdate = onDocumentUpdated(
 
       console.log(`Found ${studentIds.length} students to notify.`);
 
-      await saveAndSendStuNotifications(studentIds, scheduleData, latenessMinutes);
+      await saveAndSendStuNotifications(
+          studentIds,
+          scheduleData,
+          latenessMinutes,
+      );
     },
 );
 
@@ -97,26 +118,42 @@ exports.onLatenessUpdate = onDocumentUpdated(
  * @param {object} scheduleData The data from the schedule document.
  * @param {number} latenessMinutes The current delay in minutes.
  */
-async function saveAndSendStuNotifications(studentIds, scheduleData, latenessMinutes) {
-  const scheduledDatetime = DateTime.fromJSDate(scheduleData.scheduledDatetime.toDate()).setZone("Asia/Kuala_Lumpur");
+async function saveAndSendStuNotifications(
+    studentIds,
+    scheduleData,
+    latenessMinutes,
+) {
+  const scheduledDatetime = DateTime.fromJSDate(
+      scheduleData.scheduledDatetime.toDate(),
+  ).setZone("Asia/Kuala_Lumpur");
   const normalizedDatetime = scheduledDatetime.toISO().substring(0, 16);
   const key = `delay-student-allStudents-${scheduleData.routeId}-${scheduleData.type}-${normalizedDatetime}`;
 
   const notificationsRef = db.collection("notifications");
-  const query = notificationsRef.where("key", "==", key).orderBy("created", "desc").limit(1);
+  const query = notificationsRef
+      .where("key", "==", key)
+      .orderBy("created", "desc")
+      .limit(1);
   const snapshot = await query.get();
   if (!snapshot.empty) {
     const lastNotification = snapshot.docs[0].data();
     const now = DateTime.now();
-    const lastNotifTime = DateTime.fromJSDate(lastNotification.created.toDate());
+    const lastNotifTime = DateTime.fromJSDate(
+        lastNotification.created.toDate(),
+    );
 
-    const timeGapMinutes = now.diff(lastNotifTime, "minutes").toObject().minutes;
-    const latenessDifference = latenessMinutes - lastNotification.latenessMinutes;
+    const timeGapMinutes = now
+        .diff(lastNotifTime, "minutes")
+        .toObject().minutes;
+    const latenessDifference =
+      latenessMinutes - lastNotification.latenessMinutes;
     const hasTimeGapElapsed = timeGapMinutes >= 15;
     const hasLatenessIncreasedSignificantly = latenessDifference >= 10;
 
     console.log(`Checking throttle rules for key: ${key}`);
-    console.log(`Time since last notification: ${timeGapMinutes.toFixed(2)} minutes.`);
+    console.log(
+        `Time since last notification: ${timeGapMinutes.toFixed(2)} minutes.`,
+    );
     console.log(`Increase in lateness: ${latenessDifference} minutes.`);
 
     if (!hasTimeGapElapsed && !hasLatenessIncreasedSignificantly) {
@@ -125,21 +162,32 @@ async function saveAndSendStuNotifications(studentIds, scheduleData, latenessMin
     }
     console.log("Throttling conditions met. Proceeding to send notification.");
   } else {
-    console.log(`No existing notification found for key: ${key}. Sending first notification.`);
+    console.log(
+        `No existing notification found for key: ${key}. Sending first notification.`,
+    );
   }
 
   let routeName = "Unknown Route";
   let busPlateNumber = "Unknown";
   try {
-    const routeDoc = await db.collection("routes").doc(scheduleData.routeId).get();
+    const routeDoc = await db
+        .collection("routes")
+        .doc(scheduleData.routeId)
+        .get();
     if (routeDoc.exists) {
       routeName = routeDoc.data().name || routeName;
     }
     if (scheduleData.busDriverPairId) {
-      const busDriverPairDoc = await db.collection("busDriverPairings").doc(scheduleData.busDriverPairId).get();
+      const busDriverPairDoc = await db
+          .collection("busDriverPairings")
+          .doc(scheduleData.busDriverPairId)
+          .get();
       if (busDriverPairDoc.exists) {
         const busDriverPairData = busDriverPairDoc.data();
-        const busDoc = await db.collection("buses").doc(busDriverPairData.busId).get();
+        const busDoc = await db
+            .collection("buses")
+            .doc(busDriverPairData.busId)
+            .get();
         if (busDoc.exists) {
           busPlateNumber = busDoc.data().plateNumber || busPlateNumber;
         }
@@ -173,7 +221,9 @@ async function saveAndSendStuNotifications(studentIds, scheduleData, latenessMin
 
   const studentsRef = db.collection("students");
   const pushTokens = [];
-  const studentDocs = await Promise.all(studentIds.map((id) => studentsRef.doc(id).get()));
+  const studentDocs = await Promise.all(
+      studentIds.map((id) => studentsRef.doc(id).get()),
+  );
   for (const studentDoc of studentDocs) {
     if (!studentDoc.exists) continue;
     if (studentDoc.data() && studentDoc.data().pushToken) {
@@ -201,7 +251,9 @@ async function saveAndSendStuNotifications(studentIds, scheduleData, latenessMin
 
     try {
       const response = await admin.messaging().sendEachForMulticast(message);
-      console.log(`Successfully sent multicast message to ${response.successCount} devices.`);
+      console.log(
+          `Successfully sent multicast message to ${response.successCount} devices.`,
+      );
       if (response.failureCount > 0) {
         console.log(`Failed to send to ${response.failureCount} devices.`);
       }
@@ -216,7 +268,10 @@ exports.adminAccountManagement = onCall(
     async (request) => {
       const auth = request.auth;
       if (!auth || !auth.token || auth.token.role !== "super_admin") {
-        console.log("Permission denied. User role is:", auth ? auth.token.role : "not authenticated");
+        console.log(
+            "Permission denied. User role is:",
+                auth ? auth.token.role : "not authenticated",
+        );
         throw new functions.https.HttpsError(
             "permission-denied",
             "Only super admins can perform admin account operations",
@@ -241,7 +296,9 @@ exports.adminAccountManagement = onCall(
               disabled: false,
               displayName: name,
             });
-            await admin.auth().setCustomUserClaims(userRecord.uid, {role: role});
+            await admin
+                .auth()
+                .setCustomUserClaims(userRecord.uid, {role: role});
             const link = await admin.auth().generatePasswordResetLink(email);
 
             await admin.firestore().collection("admins").doc(userRecord.uid).set({
@@ -271,7 +328,8 @@ exports.adminAccountManagement = onCall(
             }
 
             const resetLink = await admin.auth().generatePasswordResetLink(email);
-            const adminQuery = await admin.firestore()
+            const adminQuery = await admin
+                .firestore()
                 .collection("admins")
                 .where("email", "==", email)
                 .limit(1)
@@ -324,8 +382,15 @@ exports.driverAccountManagement = onCall(
     {region: "asia-southeast1"},
     async (request) => {
       const auth = request.auth;
-      if (!auth || !auth.token || (auth.token.role !== "admin" && auth.token.role !== "super_admin")) {
-        console.log("Permission denied. User role is:", auth ? auth.token.role : "not authenticated");
+      if (
+        !auth ||
+      !auth.token ||
+      (auth.token.role !== "admin" && auth.token.role !== "super_admin")
+      ) {
+        console.log(
+            "Permission denied. User role is:",
+                auth ? auth.token.role : "not authenticated",
+        );
         throw new functions.https.HttpsError(
             "permission-denied",
             "Only admins can perform driver account operations",
@@ -343,7 +408,8 @@ exports.driverAccountManagement = onCall(
                   "Email, name, phone, and license number are required for creating driver accounts",
               );
             }
-            const driverQuery = await admin.firestore()
+            const driverQuery = await admin
+                .firestore()
                 .collection("drivers")
                 .where("email", "==", email)
                 .limit(1)
@@ -360,20 +426,26 @@ exports.driverAccountManagement = onCall(
               disabled: false,
               displayName: name,
             });
-            await admin.auth().setCustomUserClaims(userRecord.uid, {role: "driver"});
+            await admin
+                .auth()
+                .setCustomUserClaims(userRecord.uid, {role: "driver"});
             const link = await admin.auth().generatePasswordResetLink(email);
 
-            await admin.firestore().collection("drivers").doc(userRecord.uid).set({
-              driverId: userRecord.uid,
-              name: name,
-              email: email,
-              phone: phone,
-              licenseNumber: licenseNumber,
-              status: "pending",
-              invitedBy: inviterEmail,
-              link: link,
-              linkGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
+            await admin
+                .firestore()
+                .collection("drivers")
+                .doc(userRecord.uid)
+                .set({
+                  driverId: userRecord.uid,
+                  name: name,
+                  email: email,
+                  phone: phone,
+                  licenseNumber: licenseNumber,
+                  status: "pending",
+                  invitedBy: inviterEmail,
+                  link: link,
+                  linkGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
             return {
               success: true,
               action: "createDriver",
@@ -390,7 +462,8 @@ exports.driverAccountManagement = onCall(
                   "Email is required for generating reset links",
               );
             }
-            const driverQuery = await admin.firestore()
+            const driverQuery = await admin
+                .firestore()
                 .collection("drivers")
                 .where("email", "==", email)
                 .limit(1)
@@ -561,7 +634,10 @@ exports.saveDrvNotification = onCall(
         }
       }
       if (!finalScheduledDatetime) {
-        console.warn(`Received invalid or missing scheduledDatetime: ${data.scheduledDatetime}.`, "Using current server time as a fallback.");
+        console.warn(
+            `Received invalid or missing scheduledDatetime: ${data.scheduledDatetime}.`,
+            "Using current server time as a fallback.",
+        );
         finalScheduledDatetime = admin.firestore.Timestamp.now();
       }
 
@@ -669,7 +745,9 @@ exports.archiveOldNotifications = onSchedule(
           return null;
         }
 
-        console.log(`Found ${oldNotificationsSnapshot.size} notifications to archive.`);
+        console.log(
+            `Found ${oldNotificationsSnapshot.size} notifications to archive.`,
+        );
 
         const batch = db.batch();
         let archivedCount = 0;
@@ -721,7 +799,9 @@ exports.archiveNotificationsManual = onCall(
           return {success: true, message: "No notifications to archive"};
         }
 
-        console.log(`Found ${oldNotificationsSnapshot.size} notifications to archive.`);
+        console.log(
+            `Found ${oldNotificationsSnapshot.size} notifications to archive.`,
+        );
 
         const batch = db.batch();
         let archivedCount = 0;
@@ -742,7 +822,10 @@ exports.archiveNotificationsManual = onCall(
         if (archivedCount > 0) {
           await batch.commit();
           console.log(`Successfully archived ${archivedCount} notifications.`);
-          return {success: true, message: `Archived ${archivedCount} notifications`};
+          return {
+            success: true,
+            message: `Archived ${archivedCount} notifications`,
+          };
         } else {
           console.log("No notifications were archived.");
           return {success: true, message: "No notifications to archive"};

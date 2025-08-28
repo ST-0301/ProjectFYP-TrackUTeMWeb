@@ -105,7 +105,7 @@ onUnmounted(() => {
 
 
 // Helper functions
-const setupRealtimeListeners = () => { 
+const setupRealtimeListeners = () => {
   if (unsubscribeSchedules) {
     unsubscribeSchedules();
   }
@@ -276,33 +276,41 @@ const toggleViewMode = () => {
   border: 1px solid rgba(0, 0, 0, 0.125);
   transition: all 0.2s ease;
 }
+
 .accordion-item:hover {
   box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
 }
+
 .accordion-header {
   transition: background-color 0.2s ease;
 }
+
 .accordion-header:hover {
   background-color: rgba(0, 0, 0, 0.03);
 }
+
 .stat-chip {
   font-size: 0.75rem;
   padding: 0.35em 0.65em;
   border-radius: 50rem;
 }
+
 .timeline {
   position: relative;
   padding-left: 1.5rem;
 }
+
 .timeline::before {
   left: 0.5rem;
   bottom: 0;
   width: 2px;
   background-color: #e9ecef;
 }
+
 .timeline-item {
   position: relative;
 }
+
 .timeline-dot {
   width: 1rem;
   height: 1rem;
@@ -311,33 +319,42 @@ const toggleViewMode = () => {
   position: relative;
   z-index: 1;
 }
+
 .timeline-dot.on-time {
   background-color: #28a745;
   border: 2px solid #d4edda;
 }
+
 .timeline-dot.minor-delay {
   background-color: #ffc107;
   border: 2px solid #fff3cd;
 }
+
 .timeline-dot.major-delay {
   background-color: #dc3545;
   border: 2px solid #f8d7da;
 }
+
 .timeline-lateness.on-time {
   color: #28a745;
 }
+
 .timeline-lateness.minor-delay {
   color: #ffc107;
 }
+
 .timeline-lateness.major-delay {
   color: #dc3545;
 }
+
 .text-on-time {
   color: #28a745;
 }
+
 .text-minor-delay {
   color: #ffc107;
 }
+
 .text-major-delay {
   color: #dc3545;
 }

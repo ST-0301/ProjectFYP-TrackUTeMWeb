@@ -370,7 +370,7 @@ async function updateDriver() {
         phone: currentDriver.value.phone,
         licenseNumber: currentDriver.value.licenseNumber,
         status: currentDriver.value.status
-};
+    };
     if (currentDriver.value.email !== currentDriver.value.originalEmail) {
         updates.email = currentDriver.value.email;
     }
@@ -645,7 +645,8 @@ watch([sortColumn, sortDirection], () => {
                                         </td>
                                         <td class="align-middle">
                                             <button class="btn btn-link text-secondary mb-0 px-1"
-                                                @click="editDriver(driver)" v-if="driver.status === 'available' || driver.status === 'on_duty' || driver.status === 'off_duty'">
+                                                @click="editDriver(driver)"
+                                                v-if="driver.status === 'available' || driver.status === 'on_duty' || driver.status === 'off_duty'">
                                                 <i class="fas fa-pencil-alt text-xs" aria-hidden="true"></i>
                                             </button>
 
@@ -791,7 +792,7 @@ watch([sortColumn, sortDirection], () => {
                                                     @change="currentDriver.status = $event.target.checked ? 'available' : 'disabled'"
                                                     :disabled="currentDriver.status === 'pending'">
                                                     Status: {{ currentDriver.status !== 'disabled' ? 'Available' :
-                                                    'Disabled' }}
+                                                        'Disabled' }}
                                                 </ArgonSwitch>
                                             </div>
                                         </div>

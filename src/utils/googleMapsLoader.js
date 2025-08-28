@@ -18,12 +18,12 @@ export const loadGoogleMaps = () => {
 };
 
 export const calculateRouteDurations = async (waypoints) => {
-   if (!window.google || !window.google.maps) {
-     throw new Error("Google Maps API not loaded");
-   }
-   if (!Array.isArray(waypoints) || waypoints.length < 2) {
-     throw new Error("At least 2 waypoints are required");
-   }
+  if (!window.google || !window.google.maps) {
+    throw new Error("Google Maps API not loaded");
+  }
+  if (!Array.isArray(waypoints) || waypoints.length < 2) {
+    throw new Error("At least 2 waypoints are required");
+  }
 
   const directionsService = new google.maps.DirectionsService();
   const waypointsFormatted = waypoints.slice(1, -1).map((coord) => ({

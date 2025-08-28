@@ -153,7 +153,7 @@ const getBusPlateNumber = async (busDriverPairId) => {
     border-radius: 6px;
     font-size: 13px;
     font-weight: bold;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
     white-space: nowrap;
     z-index: 10;
     pointer-events: none;
@@ -170,6 +170,7 @@ const getBusPlateNumber = async (busDriverPairId) => {
 .driver-marker:hover .driver-tooltip {
     opacity: 1;
 }
+
 .badge.bg-gradient-success {
     background: linear-gradient(87deg, #2dce89 0, #2dcecc 100%) !important;
     color: #fff;
@@ -184,6 +185,7 @@ const getBusPlateNumber = async (busDriverPairId) => {
     background: linear-gradient(87deg, #5e72e4 0, #825ee4 100%) !important;
     color: #fff;
 }
+
 /* .fa-user-tie {
     color: #4285F4;
     font-size: 24px;

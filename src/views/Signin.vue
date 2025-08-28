@@ -99,7 +99,7 @@ const handleSignIn = async () => {
     const persistenceType = rememberMe.value
       ? browserLocalPersistence
       : browserSessionPersistence;
-      console.log("Setting persistence to:", persistenceType);
+    console.log("Setting persistence to:", persistenceType);
     await setPersistence(auth, persistenceType);
 
     const q = query(adminCollection, where("email", "==", email.value));

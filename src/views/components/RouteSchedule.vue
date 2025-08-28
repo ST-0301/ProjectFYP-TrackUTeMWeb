@@ -86,7 +86,7 @@ const unsubscribeSchedules = ref(null);
 // Lifecycle hooks
 onMounted(async () => {
     await loadGoogleMaps();
-  const routeId = route.params.id;
+    const routeId = route.params.id;
     if (!routeId) {
         console.error("Route ID is missing from URL parameters.");
         errors.value.general = "Error: Route information is not fully loaded. Please wait a moment and try again.";
@@ -710,12 +710,12 @@ const validateAssignments = () => {
     clearErrors();
     let isValid = true;
     const errorMessages = [];
-    
+
     for (const assignment of modalAssignments.value) {
         if (assignment.driverId && assignment.busId) {
             const existingPair = busDriverPairings.value.find(
                 pair => pair.driverId === assignment.driverId &&
-                        pair.busId === assignment.busId
+                    pair.busId === assignment.busId
             );
             if (!existingPair) {
                 errors.value.assignments = "The driver and bus you selected are not paired at all.";
@@ -904,7 +904,7 @@ const createSchedule = async () => {
         } else {
             baseScheduleData.rpoints = createScheduleForm.value.rpoints.map(rp => ({
                 rpointId: rp.rpointId,
-                planTime: rp.planTime, 
+                planTime: rp.planTime,
                 actTime: null,
                 latenessMinutes: 0,
                 status: 'scheduled',
@@ -1295,7 +1295,7 @@ const saveAssignment = async () => {
 const deleteOrCancelSchedule = async () => {
     const group = scheduleToActOn.value;
     if (!group || group.length === 0) return;
-     const hasCompleted = group.some(s => s.status === 'completed');
+    const hasCompleted = group.some(s => s.status === 'completed');
     if (hasCompleted) {
         errors.value.general = "Cannot delete or cancel completed schedules.";
         isLoading.value = false;
@@ -2079,8 +2079,8 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                                                     <span class="badge px-2 py-1 text-white"
                                                         :class="getScheduleStatusClass(getGroupedStatus(getSchedulesForCell(entry.fullDate, activeTab, timeSlot)))">
                                                         {{ getGroupedStatus(getSchedulesForCell(entry.fullDate,
-                                                        activeTab,
-                                                        timeSlot)).replace('_', ' ') }}
+                                                            activeTab,
+                                                            timeSlot)).replace('_', ' ') }}
                                                     </span>
                                                 </div>
                                                 <div class="d-flex justify-content-between text-dark mb-1">
@@ -2093,11 +2093,11 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                                                     <template v-else>
                                                         <span class="me-2">
                                                             {{ getCounts(getSchedulesForCell(entry.fullDate, activeTab,
-                                                            timeSlot)).busDriverPairs }} Driver
+                                                                timeSlot)).busDriverPairs }} Driver
                                                         </span>
                                                         <span>
                                                             {{ getCounts(getSchedulesForCell(entry.fullDate, activeTab,
-                                                            timeSlot)).busDriverPairs }} Bus
+                                                                timeSlot)).busDriverPairs }} Bus
                                                         </span>
                                                     </template>
                                                 </div>
@@ -2108,7 +2108,7 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                                                             : 'text-muted'
                                                     ]">👥 Queue: {{
                                                         getTotalQueuedStudents(getSchedulesForCell(entry.fullDate,
-                                                        activeTab, timeSlot)) }}</span>
+                                                            activeTab, timeSlot)) }}</span>
                                                 </div>
                                             </template>
                                         </div>
@@ -2136,7 +2136,7 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                     <h5 class="modal-title">
                         {{ selectedScheduleForUpdate ? 'Update Schedule' : 'Add New Schedule' }}
                         <span v-if="createScheduleForm.type !== 'event'"> (Step {{ currentStep
-                            }} of 3)</span>
+                        }} of 3)</span>
                     </h5>
                     <button type="button" class="btn-close" @click="closeModal"></button>
                 </div>
@@ -2197,8 +2197,8 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                                         :max="maxRepeatUntilDate" required />
                                     <p class="text-xs text-muted mt-1">
                                         Maximum 3 months from {{ currentSelectedFullDate ? new
-                                        Date(currentSelectedFullDate).toLocaleDateString("en-GB")
-                                        : 'the start date'
+                                            Date(currentSelectedFullDate).toLocaleDateString("en-GB")
+                                            : 'the start date'
                                         }}.
                                     </p>
                                     <div v-if="errors.repeatUntilDate" class="text-danger text-sm mt-1">
@@ -2510,9 +2510,9 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                             :disabled="isLoading">
                             <span v-if="!isLoading">
                                 {{
-                                scheduleToActOn
-                                ? (actionType === 'cancel' ? 'Confirm Cancel' : 'Confirm Delete')
-                                : (isAssignmentLocked(assignmentToDelete) ? 'Confirm Cancel' : 'Confirm Delete')
+                                    scheduleToActOn
+                                        ? (actionType === 'cancel' ? 'Confirm Cancel' : 'Confirm Delete')
+                                        : (isAssignmentLocked(assignmentToDelete) ? 'Confirm Cancel' : 'Confirm Delete')
                                 }}
                             </span>
                             <span v-else>
@@ -2539,7 +2539,7 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                     <div class="alert alert-danger">
                         <strong>Reason for Cancellation:</strong>
                         <p class="mb-0 fst-italic">{{ fullyCancelledSchedule.cancelReason || 'No reason provided.'
-                            }}
+                        }}
                         </p>
                     </div>
                     <hr>
@@ -2548,13 +2548,13 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                         <div class="col-md-6">
                             <p><strong class="text-sm">Route:</strong><br> {{ currentRoute.name }}</p>
                             <p><strong class="text-sm">Type:</strong><br> <span class="text-capitalize">{{
-                                    fullyCancelledSchedule.type
-                                    }}</span></p>
+                                fullyCancelledSchedule.type
+                            }}</span></p>
                         </div>
                         <div class="col-md-6">
                             <p><strong class="text-sm">Originally Scheduled For:</strong><br> {{
                                 formatDateTime(fullyCancelledSchedule.scheduledDatetime)
-                                }}</p>
+                            }}</p>
                         </div>
                     </div>
                     <div class="row mt-3" v-if="fullyCancelledSchedule.type !== 'event'">
@@ -2683,15 +2683,18 @@ watch(() => createScheduleForm.value.time, (newTime) => {
     border-radius: 0.375rem;
     transition: all 0.3s ease;
 }
+
 .nav-pills .nav-link:hover {
     background-color: rgba(0, 0, 0, 0.05);
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
+
 .nav-pills .nav-link.active {
     background-color: #344767;
     color: white;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
 }
+
 th,
 td {
     width: calc((100% - 90px) / 7);
@@ -2701,9 +2704,11 @@ td {
     vertical-align: middle;
     border: 1px solid #e9ecef !important;
 }
+
 th {
     border-bottom: 1px solid #344767 !important;
 }
+
 /* .badge {
     font-size: 1em;
     padding: 0.5em;
@@ -2711,21 +2716,25 @@ th {
     align-items: center;
 } */
 .cell-fully-cancelled {
-     background-color: #f1f1f1;
-     font-style: italic;
-     padding: 10px 0;
- }
+    background-color: #f1f1f1;
+    font-style: italic;
+    padding: 10px 0;
+}
+
 .badge-in-progress {
     background-color: #fd7e14;
     color: white;
 }
+
 .bg-fully-cancelled {
     background-color: #f1f1f1;
     box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.12) !important;
 }
+
 .modal.delete-confirm-modal {
     z-index: 1060;
 }
+
 .modal-backdrop.delete-confirm-backdrop {
     z-index: 1050;
 }

@@ -23,7 +23,7 @@ const showPerformanceModal = ref(false);
 const sortColumn = ref("time");
 const sortDirection = ref("asc");
 const currentPage = ref(1);
-const itemsPerPage = ref(20);9
+const itemsPerPage = ref(20); 9
 // Subscription state
 let unsubscribeSchedules = null;
 
@@ -237,7 +237,7 @@ const groupAndSetSchedules = (rawSchedules) => {
     }
 
     for (const group of groupedSchedules.values()) {
-        const inProgressSchedules = group.allSchedules.filter(s => s.status === 'in_progress' || s.status === 'completed' );
+        const inProgressSchedules = group.allSchedules.filter(s => s.status === 'in_progress' || s.status === 'completed');
 
         if (inProgressSchedules.length > 0) {
             let totalLateness = 0;
@@ -535,13 +535,13 @@ watch([sortColumn, sortDirection, selectedDate], () => {
                                 </td>
                                 <td class="text-sm font-weight-bold mb-0">
                                     {{
-                                    sched.type === "incampus"
-                                    ? "In Campus"
-                                    : sched.type === "outcampus"
-                                    ? "Out Campus"
-                                    : sched.type === "event"
-                                    ? "Event"
-                                    : sched.type
+                                        sched.type === "incampus"
+                                            ? "In Campus"
+                                            : sched.type === "outcampus"
+                                                ? "Out Campus"
+                                                : sched.type === "event"
+                                                    ? "Event"
+                                                    : sched.type
                                     }}
                                 </td>
                                 <td class="text-truncate text-sm font-weight-bold mb-0">
@@ -660,42 +660,52 @@ watch([sortColumn, sortDirection, selectedDate], () => {
 .date-picker-trigger {
     width: 160px !important;
 }
+
 .btn-sm {
     padding: 10px 20px;
     box-shadow: none !important;
 }
+
 .btn-custom-outline {
     background-color: #fff !important;
     border: 1px solid #0000ff9f !important;
     color: #0000ff9f !important;
     box-shadow: none !important;
 }
+
 .btn-custom-outline:hover {
     background-color: #0000ff9f !important;
     border-color: #fff !important;
     color: #fff !important;
 }
+
 .btn-custom-outline:hover .text-primary {
     color: #fff !important;
 }
+
 .btn-custom-outline .badge {
     padding: 2px 10px !important;
 }
+
 .btn .badge:not(:last-child) {
     margin-right: 0.3rem;
 }
+
 .btn .badge:not(:first-child) {
     margin-left: 0.3rem;
 }
+
 .badge {
     font-size: 0.9em;
     display: inline-flex;
 }
+
 .queue-highlight {
     color: #dc3545;
     background-color: #fff3cd;
     border: 2px solid #fd7e14 !important;
 }
+
 .lateness-badge {
     display: inline-block;
     width: 12px;
@@ -704,15 +714,19 @@ watch([sortColumn, sortDirection, selectedDate], () => {
     margin-right: 6px;
     vertical-align: middle;
 }
+
 .lateness-badge.good {
     background-color: #28a745;
 }
+
 .lateness-badge.warning {
     background-color: #ffc107;
 }
+
 .lateness-badge.bad {
     background-color: #dc3545;
 }
+
 .lateness-text {
     color: #dc3545;
     margin-left: 4px;
@@ -721,6 +735,7 @@ watch([sortColumn, sortDirection, selectedDate], () => {
     text-decoration: underline;
     transition: color 0.2s ease;
 }
+
 .lateness-text:hover {
     color: #b02a37;
     text-decoration: none;

@@ -1,11 +1,27 @@
-import { getFirestore, doc, getDoc, getDocs, collection, query, where, orderBy, limit } from "firebase/firestore";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  getDocs,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
+} from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { firebaseApp } from "@/firebase";
 
 const db = getFirestore(firebaseApp);
-const functions = getFunctions(firebaseApp, "asia-southeast1"); 
-const saveDrvNotificationFunction = httpsCallable(functions, "saveDrvNotification");
-const sendDrvPushNotificationFunction = httpsCallable(functions, "sendDrvNotification");
+const functions = getFunctions(firebaseApp, "asia-southeast1");
+const saveDrvNotificationFunction = httpsCallable(
+  functions,
+  "saveDrvNotification"
+);
+const sendDrvPushNotificationFunction = httpsCallable(
+  functions,
+  "sendDrvNotification"
+);
 
 /**
  * Saves a notification and then attempts to send a push notification.
@@ -43,9 +59,9 @@ export const sendPushNotification = async (
   let finalScheduledDatetime;
   if (scheduledTime instanceof Date) {
     finalScheduledDatetime = scheduledTime;
-  } else if (typeof scheduledTime === 'string') {
+  } else if (typeof scheduledTime === "string") {
     finalScheduledDatetime = new Date(scheduledTime);
-  } else if (scheduledTime && typeof scheduledTime.toDate === 'function') {
+  } else if (scheduledTime && typeof scheduledTime.toDate === "function") {
     finalScheduledDatetime = scheduledTime.toDate();
   }
   if (!finalScheduledDatetime || isNaN(finalScheduledDatetime.getTime())) {
@@ -70,10 +86,12 @@ export const sendPushNotification = async (
       orderBy("created", "desc"),
       limit(1)
     );
-    const existingNotificationSnapshot = await getDocs(existingNotificationQuery);
+    const existingNotificationSnapshot = await getDocs(
+      existingNotificationQuery
+    );
     if (!existingNotificationSnapshot.empty) {
-     console.log(`Notification with key ${key} already exists. Skipping.`);
-     return;
+      console.log(`Notification with key ${key} already exists. Skipping.`);
+      return;
     }
     const notificationData = {
       key: key,
@@ -90,7 +108,7 @@ export const sendPushNotification = async (
       title: title,
       body: body || `Update for route: ${routeName}`,
     };
-    
+
     await saveDrvNotificationFunction(notificationData);
     console.log(`Notification for driver ${driverId} saved to Firestore.`);
 
