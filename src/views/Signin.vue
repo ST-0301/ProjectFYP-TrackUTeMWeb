@@ -1,14 +1,14 @@
 <script setup>
-import { onBeforeUnmount, onBeforeMount, ref } from "vue";
+import { onBeforeUnmount, onBeforeMount, ref, onMounted } from "vue";
 import { useStore } from "vuex";
 import { useRouter } from "vue-router";
 import { adminCollection } from '@/firebase';
-import { getAuth, signInWithEmailAndPassword, setPersistence, browserSessionPersistence, browserLocalPersistence, signOut } from "firebase/auth";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, setPersistence, browserSessionPersistence, browserLocalPersistence } from "firebase/auth";
+import { query, where, getDocs, updateDoc } from "firebase/firestore";
 import AppFooter from "@/examples/PageLayout/Footer.vue";
+import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
 import ArgonSwitch from "@/components/ArgonSwitch.vue";
-import ArgonButton from "@/components/ArgonButton.vue";
 
 
 const body = document.getElementsByTagName("body")[0];
@@ -21,6 +21,7 @@ const password = ref("");
 const rememberMe = ref(false);
 // UI state
 const showPassword = ref(false);
+const isLoading = ref(false);
 // Error state
 const errorMessage = ref("");
 
@@ -40,6 +41,38 @@ onBeforeUnmount(() => {
   store.state.showFooter = true;
   body.classList.add("bg-gray-100");
 });
+onMounted(() => {
+  checkExistingAuth();
+});
+const checkExistingAuth = () => {
+  const auth = getAuth();
+  isLoading.value = true;
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      try {
+        const q = query(adminCollection, where("email", "==", user.email));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          const adminDoc = querySnapshot.docs[0];
+          const adminData = adminDoc.data();
+          if (adminData.status === 'disabled') {
+            await auth.signOut();
+            errorMessage.value = "Your account has been disabled. Please contact the administrator.";
+          } else {
+            router.push('/live-driver-map');
+          }
+        } else {
+          await auth.signOut();
+          errorMessage.value = "Unauthorized access. You do not have permission to access this system.";
+        }
+      } catch (error) {
+        console.error("Auth check error:", error);
+        await auth.signOut();
+      }
+    }
+    isLoading.value = false;
+  });
+};
 
 
 // Validation functions
@@ -47,58 +80,56 @@ const validateEmail = (email) => {
   const re = /^[^\s@]+@utem\.edu\.my$/;
   return re.test(email);
 };
-const validatePassword = (password) => {
-  const re = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?#^;:,./])[A-Za-z\d@$!%*?#^;:,./]{8,}$/;
-  return re.test(password);
-};
 
 
 // UI handlers
 const handleSignIn = async () => {
-  errorMessage.value = "";
-  if (!validateEmail(email.value)) {
+  errorMessage.value = '';
+  if (!email.value || !password.value) {
+    errorMessage.value = "Please enter both email and password.";
+    return;
+  } else if (!validateEmail(email.value)) {
     errorMessage.value = "Please use a valid UTEM email (@utem.edu.my)";
     return;
   }
-  if (!validatePassword(password.value)) {
-    errorMessage.value = "Password must be 8+ characters with uppercase, lowercase, number, and special character";
-    return;
-  }
+  isLoading.value = true;
+
   try {
     const auth = getAuth();
-    await setPersistence(auth, rememberMe.value ? browserLocalPersistence : browserSessionPersistence);
-    const userCredential = await signInWithEmailAndPassword(auth, email.value, password.value);
-    const adminRef = doc(adminCollection, userCredential.user.uid);
-    const adminSnap = await getDoc(adminRef);
+    const persistenceType = rememberMe.value
+      ? browserLocalPersistence
+      : browserSessionPersistence;
+      console.log("Setting persistence to:", persistenceType);
+    await setPersistence(auth, persistenceType);
 
-    if (adminSnap.exists()) {
-      if (adminSnap.data().status === 'disabled') {
-        await auth.signOut();
-        errorMessage.value = "Your account has been disabled.";
-        return;
-      }
-      if (adminSnap.data().status === 'pending') {
-        await updateDoc(adminRef, { status: 'active' });
-      }
-      router.push("/realtime-location");
-    } else {
-      await signOut(auth);
-      errorMessage.value = "You do not have permission to access this system.";
+    const q = query(adminCollection, where("email", "==", email.value));
+    const querySnapshot = await getDocs(q);
+    if (querySnapshot.empty) {
+      errorMessage.value = "Unauthorized access. You do not have permission to access this system.";
+      return;
     }
-    // await signInWithEmailAndPassword(auth, email.value, password.value);
-    // router.push("/realtime-location");
+
+    const adminDoc = querySnapshot.docs[0];
+    const adminData = adminDoc.data();
+    if (adminData.status === 'disabled') {
+      errorMessage.value = "Your account has been disabled. Please contact the administrator.";
+      return;
+    }
+
+    await signInWithEmailAndPassword(auth, email.value, password.value);
+
+    if (adminData.status === 'pending') {
+      await updateDoc(adminDoc.ref, { status: 'active', link: null, linkGeneratedAt: null });
+    }
+    router.push('/live-driver-map');
   } catch (error) {
-    console.error("Login error:", error);
-    switch (error.code) {
-      case "auth/user-not-found":
-        errorMessage.value = "User not found. Please check your email.";
-        break;
-      case "auth/wrong-password":
-        errorMessage.value = "Incorrect password. Please try again.";
-        break;
-      default:
-        errorMessage.value = "Login failed. Please try again later.";
+    if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+      errorMessage.value = 'Invalid email or password.';
+    } else {
+      console.error("Sign-in error:", error);
+      errorMessage.value = "An unexpected error occurred. Please try again.";
     }
+    isLoading.value = false;
   }
 };
 </script>
@@ -142,16 +173,21 @@ const handleSignIn = async () => {
                   </span>
                 </div>
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                  <argon-switch id="rememberMe" name="remember-me" v-model="rememberMe">Remember me</argon-switch>
-                  <a href="#" class="text-sm text-dark font-weight-bold">Forgot password?</a>
+                  <argon-switch id="rememberMe" name="remember-me" :checked="rememberMe"
+                    @change="rememberMe = $event.target.checked">Remember me</argon-switch>
                 </div>
                 <div v-if="errorMessage" class="alert alert-danger text-white mt-3">
                   {{ errorMessage }}
                 </div>
 
                 <div class="text-center">
-                  <argon-button fullWidth color="dark" variant="gradient" class="my-4 mb-2" size="lg" type="submit">
-                    Sign in
+                  <argon-button fullWidth color="dark" variant="gradient" class="my-4 mb-2" size="lg" type="submit"
+                    :disabled="isLoading">
+                    <span v-if="!isLoading">Sign in</span>
+                    <span v-else>
+                      <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                      Signing in...
+                    </span>
                   </argon-button>
                 </div>
               </form>

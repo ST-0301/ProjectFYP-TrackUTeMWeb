@@ -13,14 +13,19 @@ Coded by www.creative-tim.com
 * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 -->
 <script setup>
-import { computed } from "vue";
+import { computed, onMounted, onUnmounted } from "vue";
 import { useStore } from "vuex";
+import { useRouter } from "vue-router";
 import Sidenav from "./examples/Sidenav";
 import Configurator from "@/examples/Configurator.vue";
 import Navbar from "@/examples/Navbars/Navbar.vue";
 import AppFooter from "@/examples/Footer.vue";
+import { getAuth, signOut, onAuthStateChanged } from "firebase/auth";
+import { doc, onSnapshot } from "firebase/firestore";
+import { adminCollection } from "@/firebase";
 
 const store = useStore();
+const router = useRouter();
 const isNavFixed = computed(() => store.state.isNavFixed);
 const darkMode = computed(() => store.state.darkMode);
 const isAbsolute = computed(() => store.state.isAbsolute);
@@ -41,6 +46,41 @@ const navClasses = computed(() => {
     "position-absolute px-4 mx-0 w-100 z-index-2": isAbsolute.value,
     "px-0 mx-4": !isAbsolute.value,
   };
+});
+
+let unsubscribeAdminListener = null;
+let authStateUnsubscribe = null;
+onMounted(() => {
+  const auth = getAuth();
+  authStateUnsubscribe = onAuthStateChanged(auth, (user) => {
+    if (user) {
+      const adminRef = doc(adminCollection, user.uid);
+      unsubscribeAdminListener = onSnapshot(adminRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data.status === "disabled") {
+            signOut(auth).then(() => {
+              alert("Your account has been disabled. You will be signed out. Please contact the administrator.");
+              router.push("/");
+            });
+          }
+        }
+      });
+    } else {
+      if (unsubscribeAdminListener) {
+        unsubscribeAdminListener();
+        unsubscribeAdminListener = null;
+      }
+    }
+  });
+});
+onUnmounted(() => {
+  if (unsubscribeAdminListener) {
+    unsubscribeAdminListener();
+  }
+  if (authStateUnsubscribe) {
+    authStateUnsubscribe();
+  }
 });
 </script>
 <template>

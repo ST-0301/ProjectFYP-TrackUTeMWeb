@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 // import Dashboard from "../views/Dashboard.vue";
 // import Tables from "../views/Tables.vue";
-import RealtimeLocation from "../views/DriverLocation.vue";
+import LiveDriverMap from "../views/DriverLocation.vue";
 import Drivers from "../views/Drivers.vue";
 import Buses from "../views/Buses.vue";
 import RoutePoints from "../views/RoutePoints.vue";
@@ -20,7 +20,7 @@ const routes = [
     meta: {
       requiresAuth: true,
     },
-    redirect: "/realtime-location",
+    redirect: "/live-driver-map",
   },
   // {
   //   path: "/dashboard-default",
@@ -33,9 +33,9 @@ const routes = [
   //   component: Tables,
   // },
   {
-    path: "/realtime-location",
-    name: "Realtime Driver Location",
-    component: RealtimeLocation,
+    path: "/live-driver-map",
+    name: "Live Driver Map",
+    component: LiveDriverMap,
     meta: {
       requiresAuth: true,
     },
@@ -139,7 +139,7 @@ const createMyRouter = (store) => {
       if (requiresAuth && !user) {
         next("/signin");
       } else if (to.path === "/signin" && user) {
-        next("/realtime-location");
+        next("/live-driver-map");
       } else {
         next();
       }

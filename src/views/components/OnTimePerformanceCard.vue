@@ -54,8 +54,9 @@ const busAssignments = computed(() => {
         return {
           name: rpointInfo.name,
           plannedTime: rpoint.planTime,
-          actualTime: rpoint.actTime,
-          lateness: lateness
+          actualTime: formatTimestamp(rpoint.actTime),
+          lateness: lateness,
+          rawTimestamp: rpoint.actTime
         };
       });
 
@@ -141,6 +142,18 @@ const formatLateness = (minutes) => {
   if (minutes < 0) return `${Math.abs(minutes)} min early`;
   if (minutes === 0) return 'On time';
   return `${minutes} min late`;
+};
+const formatTimestamp = (timestamp) => {
+  if (!timestamp) return 'Not recorded';
+  try {
+    const date = new Date(timestamp);
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  } catch (error) {
+    console.error('Error formatting timestamp:', error);
+    return 'Invalid time';
+  }
 };
 
 

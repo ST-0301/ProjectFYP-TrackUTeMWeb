@@ -1,11 +1,11 @@
-import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc, getDocs, collection, query, where, orderBy, limit } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { firebaseApp } from "@/firebase";
 
 const db = getFirestore(firebaseApp);
 const functions = getFunctions(firebaseApp, "asia-southeast1"); 
-const saveNotificationFunction = httpsCallable(functions, "saveNotification");
-const sendPushNotificationFunction = httpsCallable(functions, "sendNotification");
+const saveDrvNotificationFunction = httpsCallable(functions, "saveDrvNotification");
+const sendDrvPushNotificationFunction = httpsCallable(functions, "sendDrvNotification");
 
 /**
  * Saves a notification and then attempts to send a push notification.
@@ -13,41 +13,95 @@ const sendPushNotificationFunction = httpsCallable(functions, "sendNotification"
  * regardless of whether they have an FCM token.
  */
 export const sendPushNotification = async (
-  driverId,
   type,
+  driverId,
+  routeId,
   routeName,
-  routeType,
+  scheduleType,
+  busDriverPairId,
+  busPlateNumber,
   scheduledTime,
   title,
   body
 ) => {
-  if (!driverId) {
-    console.error("sendPushNotification called without a driverId.");
+  if (!driverId || typeof driverId !== "string" || driverId.trim() === "") {
+    console.error(
+      "sendPushNotification called without a valid driverId:",
+      driverId
+    );
+    return;
+  }
+  if (!routeId || !routeName || !scheduleType) {
+    console.error("Missing required parameters for notification:", {
+      routeId,
+      routeName,
+      scheduleType,
+    });
     return;
   }
 
-  const notificationData = {
-    driverId,
-    type,
-    routeName,
-    routeType,
-    scheduledTime,
-    title,
-    body: body || `Update for route: ${routeName}`,
-  };
+  let finalScheduledDatetime;
+  if (scheduledTime instanceof Date) {
+    finalScheduledDatetime = scheduledTime;
+  } else if (typeof scheduledTime === 'string') {
+    finalScheduledDatetime = new Date(scheduledTime);
+  } else if (scheduledTime && typeof scheduledTime.toDate === 'function') {
+    finalScheduledDatetime = scheduledTime.toDate();
+  }
+  if (!finalScheduledDatetime || isNaN(finalScheduledDatetime.getTime())) {
+    console.warn(
+      `Could not determine a valid schedule datetime from:`,
+      scheduledTime,
+      `Falling back to the current time.`
+    );
+    finalScheduledDatetime = new Date();
+  }
+
+  const pad = (num) => String(num).padStart(2, "0");
+  const normalizedDate = `${finalScheduledDatetime.getFullYear()}-${pad(finalScheduledDatetime.getMonth() + 1)}-${pad(finalScheduledDatetime.getDate())}`;
+
+  const key = `${type}-driver-${driverId}-${routeId}-${scheduleType}-${normalizedDate}`;
 
   try {
-    await saveNotificationFunction(notificationData);
+    const notificationsRef = collection(db, "notifications");
+    const existingNotificationQuery = query(
+      notificationsRef,
+      where("key", "==", key),
+      orderBy("created", "desc"),
+      limit(1)
+    );
+    const existingNotificationSnapshot = await getDocs(existingNotificationQuery);
+    if (!existingNotificationSnapshot.empty) {
+     console.log(`Notification with key ${key} already exists. Skipping.`);
+     return;
+    }
+    const notificationData = {
+      key: key,
+      type: type,
+      audienceType: "driver",
+      audienceId: driverId,
+      routeId: routeId,
+      routeName: routeName,
+      scheduleType: scheduleType,
+      busDriverPairId: busDriverPairId || null,
+      busPlateNumber: busPlateNumber,
+      scheduledDatetime: finalScheduledDatetime,
+      latenessMinutes: 0,
+      title: title,
+      body: body || `Update for route: ${routeName}`,
+    };
+    
+    await saveDrvNotificationFunction(notificationData);
     console.log(`Notification for driver ${driverId} saved to Firestore.`);
 
     const driverDocRef = doc(db, "drivers", driverId);
     const driverDocSnap = await getDoc(driverDocRef);
 
-    if (driverDocSnap.exists() && driverDocSnap.data().fcmToken) {
-      const fcmToken = driverDocSnap.data().fcmToken;
+    if (driverDocSnap.exists() && driverDocSnap.data().pushToken) {
+      const pushToken = driverDocSnap.data().pushToken;
 
-      await sendPushNotificationFunction({
-        token: fcmToken,
+      await sendDrvPushNotificationFunction({
+        token: pushToken,
         title: title,
         body: notificationData.body,
       });
@@ -58,6 +112,9 @@ export const sendPushNotification = async (
       );
     }
   } catch (error) {
-    console.error(`An error occurred during the notification process for driver ${driverId}:`, error);
+    console.error(
+      `An error occurred during the notification process for driver ${driverId}:`,
+      error
+    );
   }
 };

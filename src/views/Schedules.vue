@@ -237,7 +237,7 @@ const groupAndSetSchedules = (rawSchedules) => {
     }
 
     for (const group of groupedSchedules.values()) {
-        const inProgressSchedules = group.allSchedules.filter(s => s.status === 'in_progress');
+        const inProgressSchedules = group.allSchedules.filter(s => s.status === 'in_progress' || s.status === 'completed' );
 
         if (inProgressSchedules.length > 0) {
             let totalLateness = 0;
@@ -522,10 +522,15 @@ watch([sortColumn, sortDirection, selectedDate], () => {
                                         :title="'Average lateness: ' + sched.avgLateness + ' minutes'">
                                     </span>
                                     {{ sched.time }}
-                                    <span v-if="sched.avgLateness > 0" class="lateness-text"
+                                    <span v-if="sched.avgLateness !== null" class="lateness-text"
                                         :title="'Average lateness: ' + sched.avgLateness + ' minutes'"
                                         @click="openPerformanceModal(sched.allSchedules)">
-                                        (+{{ sched.avgLateness }}m)
+                                        <template v-if="sched.avgLateness > 0">
+                                            (+{{ sched.avgLateness }}m)
+                                        </template>
+                                        <template v-else>
+                                            (On Time)
+                                        </template>
                                     </span>
                                 </td>
                                 <td class="text-sm font-weight-bold mb-0">

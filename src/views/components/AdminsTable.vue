@@ -2,7 +2,7 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { doc, getDoc, getDocs, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { adminCollection } from '@/firebase';
 import ArgonButton from "@/components/ArgonButton.vue";
@@ -22,13 +22,17 @@ const admins = ref([]);
 const currentAdmin = ref({ name: '', email: '', role: 'admin' });
 const currentUser = ref(null);
 const passwordResetLink = ref('');
-const newAdminEmail = ref('');
-const adminToDeactivate = ref(null);
+const currentLinkTime = ref(null);
+const selectedAdminEmail = ref('');
+const adminToDisable = ref(null);
+const adminToActivate = ref(null);
 // UI state
 const showAddAdminModal = ref(false);
 const showLinkModal = ref(false);
-const showDeactivateModal = ref(false);
+const showDisableModal = ref(false);
+const showActivateModal = ref(false);
 const isLoading = ref(false);
+const isLoadingReset = ref({});
 // Table state
 const sortColumn = ref("name");
 const sortDirection = ref("asc");
@@ -138,6 +142,38 @@ const copyToClipboard = () => {
     navigator.clipboard.writeText(passwordResetLink.value);
     alert('Link copied to clipboard!');
 };
+const formatDate = (timestamp) => {
+    if (!timestamp) return 'Unknown';
+    try {
+        let date;
+        if (timestamp && typeof timestamp === 'object' && timestamp.toDate) {
+            date = timestamp.toDate();
+        }
+        else if (timestamp instanceof Date) {
+            date = timestamp;
+        }
+        else if (typeof timestamp === 'string') {
+            date = new Date(timestamp);
+        }
+        else if (typeof timestamp === 'number') {
+            date = new Date(timestamp);
+        }
+        else {
+            console.warn('Unknown timestamp format:', timestamp);
+            return 'Invalid date';
+        }
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+    } catch (error) {
+        console.error('Error formatting date:', error, timestamp);
+        return 'Invalid date';
+    }
+};
 
 
 // Validation function
@@ -168,12 +204,14 @@ const createAdminAccountFunction = async () => {
     try {
         isLoading.value = true;
         errors.value = { name: '', email: '', general: '' };
+        passwordResetLink.value = '';
 
         const functions = getFunctions(getApp(), 'asia-southeast1');
-        const callCreateAdmin = httpsCallable(functions, "createAdminAccount");
+        const callAdminManagement = httpsCallable(functions, "adminAccountManagement");
         const auth = getAuth();
         const token = await auth.currentUser.getIdToken();
-        const result = await callCreateAdmin({
+        const result = await callAdminManagement({
+            action: 'createAdmin',
             email: currentAdmin.value.email,
             name: currentAdmin.value.name,
             role: currentAdmin.value.role,
@@ -182,13 +220,24 @@ const createAdminAccountFunction = async () => {
                 Authorization: `Bearer ${token}`
             }
         });
-        showAddAdminModal.value = false;
-        currentAdmin.value = { email: '', name: '', role: 'admin' };
-        await fetchAdmins();
 
-        passwordResetLink.value = result.data.passwordResetLink;
-        newAdminEmail.value = result.data.newAdminEmail;
-        showLinkModal.value = true;
+        const adminDocRef = doc(adminCollection, result.data.adminId);
+        const adminDoc = await getDoc(adminDocRef);
+
+        if (adminDoc.exists()) {
+            const adminData = adminDoc.data();
+            passwordResetLink.value = adminData.link;
+            selectedAdminEmail.value = result.data.selectedAdminEmail;
+            currentLinkTime.value = adminData.linkGeneratedAt ? adminData.linkGeneratedAt.toDate() : new Date();
+
+            showAddAdminModal.value = false;
+            currentAdmin.value = { email: '', name: '', role: 'admin' };
+            await fetchAdmins();
+
+            showLinkModal.value = true;
+        } else {
+            throw new Error('Failed to retrieve admin document after creation');
+        }
     } catch (error) {
         console.error('Error creating admin:', error);
         if (error.code === 'already-exists') {
@@ -202,18 +251,80 @@ const createAdminAccountFunction = async () => {
         isLoading.value = false;
     }
 };
-const deactivateAdmin = async (adminId) => {
+const disableAdmin = async (adminId) => {
     try {
         errors.value.general = ''
         await updateDoc(doc(adminCollection, adminId), {
             status: 'disabled'
         });
         await fetchAdmins();
-        showDeactivateModal.value = false;
-        adminToDeactivate.value = null;
+        showDisableModal.value = false;
+        adminToDisable.value = null;
     } catch (error) {
         console.error('Error deactivating admin:', error);
-        errors.value.general = error.message || 'Failed to deactivate admin';
+        errors.value.general = error.message || 'Failed to disable admin';
+    }
+};
+const activateAdmin = async (adminId) => {
+    try {
+        errors.value.general = '';
+        await updateDoc(doc(adminCollection, adminId), {
+            status: 'active'
+        });
+        await fetchAdmins();
+        showActivateModal.value = false;
+        adminToActivate.value = null;
+    } catch (error) {
+        console.error('Error activating admin:', error);
+        errors.value.general = error.message || 'Failed to activate admin';
+    }
+};
+const resetAdminPassword = async (email, adminId) => {
+    try {
+        isLoading.value = true;
+        isLoadingReset.value[adminId] = true;
+        errors.value.general = '';
+
+        const admin = admins.value.find(a => a.email === email);
+        if (!admin) {
+            throw new Error('Admin not found with email: ' + email);
+        }
+
+        const adminDocRef = doc(adminCollection, admin.id);
+        const adminDoc = await getDoc(adminDocRef);
+        if (adminDoc.exists()) {
+            const adminData = adminDoc.data();
+
+            const functions = getFunctions(getApp(), 'asia-southeast1');
+            const callAdminManagement = httpsCallable(functions, "adminAccountManagement");
+            const auth = getAuth();
+            const token = await auth.currentUser.getIdToken();
+            const result = await callAdminManagement({
+                action: 'generateResetLink',
+                email: adminData.email
+            }, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            });
+            await updateDoc(adminDocRef, {
+                link: result.data.resetLink,
+                linkGeneratedAt: serverTimestamp()
+            });
+            passwordResetLink.value = result.data.resetLink;
+            selectedAdminEmail.value = adminData.email;
+            currentLinkTime.value = new Date();
+            showLinkModal.value = true;
+            await fetchAdmins();
+        } else {
+            throw new Error('Admin document not found');
+        }
+    } catch (error) {
+        console.error('Error resetting password:', error);
+        errors.value.general = error.message || 'Failed to reset password';
+    } finally {
+        isLoading.value = false;
+        isLoadingReset.value[adminId] = false;
     }
 };
 
@@ -227,14 +338,34 @@ const handleSort = (column) => {
         sortDirection.value = "asc";
     }
 };
-const confirmDeactivate = (adminId) => {
-    adminToDeactivate.value = adminId;
-    showDeactivateModal.value = true;
+const confirmDisable = (adminId) => {
+    adminToDisable.value = adminId;
+    showDisableModal.value = true;
+};
+const confirmActivate = (adminId) => {
+    adminToActivate.value = adminId;
+    showActivateModal.value = true;
+};
+const showSetupLink = (admin) => {
+    passwordResetLink.value = admin.link || '';
+    selectedAdminEmail.value = admin.email;
+    if (admin.linkGeneratedAt && admin.linkGeneratedAt.toDate) {
+        currentLinkTime.value = admin.linkGeneratedAt.toDate();
+    } else {
+        currentLinkTime.value = admin.linkGeneratedAt || null;
+    }
+    showLinkModal.value = true;
 };
 const goToPage = (page) => {
     if (page >= 1 && page <= totalPages.value) {
         currentPage.value = page;
     }
+};
+const closeLinkModal = () => {
+    showLinkModal.value = false;
+    currentLinkTime.value = null;
+    passwordResetLink.value = '';
+    selectedAdminEmail.value = '';
 };
 
 
@@ -311,17 +442,38 @@ watch(() => props.refreshKey, () => {
                                 <td>
                                     <span class="badge badge-sm" :class="{
                                         'bg-gradient-success': admin.status === 'active',
-                                        'bg-gradient-warning': admin.status === 'pending',
+                                        'bg-gradient-primary': admin.status === 'pending',
                                         'bg-gradient-secondary': admin.status === 'disabled'
                                     }">
                                         {{ admin.status }}
                                     </span>
                                 </td>
                                 <td class="align-middle">
-                                    <button class="btn btn-link text-danger mb-0 px-1"
-                                        @click="confirmDeactivate(admin.id)"
+                                    <button class="btn btn-link text-secondary mb-0 px-1" @click="showSetupLink(admin)"
+                                        v-if="admin.status === 'pending'">
+                                        <i class="fas fa-link text-xs" aria-hidden="true" title="Get Setup Link"></i>
+                                        Link
+                                    </button>
+
+                                    <button class="btn btn-link text-secondary mb-0 px-1"
+                                        @click="resetAdminPassword(admin.email, admin.id)"
+                                        :disabled="isLoadingReset[admin.id]" v-if="admin.status === 'active'">
+                                        <span v-if="!isLoadingReset[admin.id]"><i class="fas fa-key text-xs"
+                                                aria-hidden="true" title="Reset Password"></i></span>
+                                        <span v-else>
+                                            <span class="spinner-border spinner-border-sm" role="status"
+                                                aria-hidden="true"></span>
+                                        </span>
+                                    </button>
+
+                                    <button class="btn btn-link text-danger mb-0 px-1" @click="confirmDisable(admin.id)"
                                         v-if="admin.role !== 'super_admin' && admin.status === 'active'">
-                                        <i class="fas fa-ban text-xs" aria-hidden="true" title="Deactivate"></i>
+                                        <i class="fas fa-ban text-xs" aria-hidden="true" title="Disable"></i>
+                                    </button>
+
+                                    <button class="btn btn-link text-success mb-0 px-1"
+                                        @click="confirmActivate(admin.id)" v-if="admin.status === 'disabled'">
+                                        <i class="fas fa-check text-xs" aria-hidden="true" title="Activate"></i>
                                     </button>
                                 </td>
                             </tr>
@@ -396,7 +548,7 @@ watch(() => props.refreshKey, () => {
                                 <div v-if="errors.name" class="text-danger text-sm mt-1">{{ errors.name }}</div>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">Email</label>
+                                <label class="form-label">Email (@utem.edu.my)</label>
                                 <argon-input v-model="currentAdmin.email" type="email" placeholder="UTEM email"
                                     required />
                                 <div v-if="errors.email" class="text-danger text-sm mt-1">{{ errors.email }}</div>
@@ -430,11 +582,14 @@ watch(() => props.refreshKey, () => {
             <div class="modal-dialog modal-dialog-centered" role="document">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title">Admin Account Created Successfully</h5>
-                        <button type="button" class="btn-close" @click="showLinkModal = false"></button>
+                        <h5 class="modal-title">Admin Setup Link</h5>
+                        <button type="button" class="btn-close" @click="closeLinkModal"></button>
                     </div>
                     <div class="modal-body">
-                        <p>New admin account created for: <strong>{{ newAdminEmail }}</strong></p>
+                        <div v-if="errors.general" class="alert alert-danger text-white mb-3">
+                            {{ errors.general }}
+                        </div>
+                        <p>Admin account for: <strong>{{ selectedAdminEmail }}</strong></p>
                         <p>Password reset link:</p>
                         <div class="input-group mb-3">
                             <input type="text" class="form-control" :value="passwordResetLink" readonly>
@@ -443,35 +598,73 @@ watch(() => props.refreshKey, () => {
                                 Copy
                             </argon-button>
                         </div>
-                        <p class="text-muted">Send this link to the new admin.</p>
+                        <p v-if="currentLinkTime" class="text-sm text-muted mb-3">
+                            <i class="fas fa-clock me-1"></i>
+                            Link generated: {{ formatDate(currentLinkTime) }}
+                        </p>
+                        <p class="text-muted">Send this link to the admin to complete their account setup.</p>
+
+                        <div v-if="!passwordResetLink" class="alert alert-warning text-white">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            No setup link available. Please regenerate the link.
+                        </div>
                     </div>
                     <div class="d-flex justify-content-end gap-3 mt-4">
-                        <argon-button color="secondary" @click="showLinkModal = false">Close</argon-button>
+                        <argon-button color="secondary" @click="closeLinkModal">Close</argon-button>
+                        <argon-button color="primary" @click="resetAdminPassword(selectedAdminEmail, null)"
+                            :disabled="isLoading" v-if="!passwordResetLink">
+                            <span v-if="!isLoading">Regenerate Link</span>
+                            <span v-else>
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                Regenerating...
+                            </span>
+                        </argon-button>
                     </div>
                 </div>
             </div>
         </div>
         <div class="modal-backdrop fade show" v-if="showLinkModal"></div>
 
-        <!-- Deactivate Confirmation Modal -->
-        <div class="modal fade" :class="{ 'show d-block': showDeactivateModal }" tabindex="-1" role="dialog">
+        <!-- Disable Confirmation Modal -->
+        <div class="modal fade" :class="{ 'show d-block': showDisableModal }" tabindex="-1" role="dialog">
             <div class="modal-dialog modal-dialog-centered" role="document">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title">Confirm Deactivation</h5>
-                        <button type="button" class="btn-close" @click="showDeactivateModal = false"></button>
+                        <button type="button" class="btn-close" @click="showDisableModal = false"></button>
                     </div>
                     <div class="modal-body">
-                        <p>Are you sure you want to deactivate this admin account?</p>
+                        <p>Are you sure you want to disable this admin account?</p>
                         <p class="text-muted">The admin will no longer be able to access the system.</p>
                     </div>
                     <div class="d-flex justify-content-end gap-3 mt-4">
-                        <argon-button color="secondary" @click="showDeactivateModal = false">Cancel</argon-button>
-                        <argon-button color="danger" @click="deactivateAdmin">Deactivate</argon-button>
+                        <argon-button color="secondary" @click="showDisableModal = false">Cancel</argon-button>
+                        <argon-button color="danger" @click="disableAdmin(adminToDisable)">Disable</argon-button>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="modal-backdrop fade show" v-if="showDeactivateModal"></div>
+        <div class="modal-backdrop fade show" v-if="showDisableModal"></div>
+
+        <!-- Activate Confirmation Modal -->
+        <div class="modal fade" :class="{ 'show d-block': showActivateModal }" tabindex="-1" role="dialog">
+            <div class="modal-dialog modal-dialog-centered" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Confirm Activation</h5>
+                        <button type="button" class="btn-close" @click="showActivateModal = false"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Are you sure you want to activate this admin account?</p>
+                        <p class="text-muted">The admin will regain access to the system.</p>
+                    </div>
+                    <div class="d-flex justify-content-end gap-3 mt-4">
+                        <argon-button color="secondary" @click="showActivateModal = false">Cancel</argon-button>
+                        <argon-button color="success" @click="activateAdmin(adminToActivate)">Activate</argon-button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show" v-if="showActivateModal"></div>
     </div>
 </template>

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
-import { onSnapshot, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
-import { driverCollection, scheduleCollection, busCollection } from '@/firebase';
+import { onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { driverCollection, scheduleCollection, busCollection, busDriverPairingCollection } from '@/firebase';
 import GoogleMap from '@/views/components/GoogleMap.vue';
 
 
@@ -22,10 +22,6 @@ const statusDisplay = {
         color: "bg-gradient-warning",
         svgColor: "#fb6340"
     },
-    rest: {
-        color: "bg-gradient-primary",
-        svgColor: "#5e72e4"
-    }
 };
 const getUserTieSVG = (color) => `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" width="32" height="32">
@@ -39,33 +35,31 @@ onMounted(() => {
         const markers = [];
         for (const docSnap of snapshot.docs) {
             const driver = docSnap.data();
-            if (
-                driver.currentLocation &&
-                ['on_duty', 'rest', 'available'].includes(driver.status)
-            ) {
-                let licensePlate = 'N/A';
+            if (driver.currentLocation && ['on_duty', 'available'].includes(driver.status)) {
+                let plateNumber = 'N/A';
 
-                if (driver.status === 'on_duty') {
-                    const schedQ = query(
-                        scheduleCollection,
-                        where('driverId', '==', docSnap.id),
-                        where('status', '==', 'in_progress')
-                    );
-                    const schedSnap = await getDocs(schedQ);
-                    if (!schedSnap.empty) {
-                        const schedDoc = schedSnap.docs[0].data();
-                        if (schedDoc.busId) {
-                            const busDocRef = doc(busCollection, schedDoc.busId);
-                            const busSnap = await getDoc(busDocRef);
-                            if (busSnap.exists()) {
-                                licensePlate = busSnap.data().licensePlate || 'N/A';
+                if (driver.status === 'on_duty' && driver.currentScheduleId) {
+                    try {
+                        // Get the schedule document
+                        const schedDocRef = doc(scheduleCollection, driver.currentScheduleId);
+                        const schedSnap = await getDoc(schedDocRef);
+
+                        if (schedSnap.exists()) {
+                            const scheduleData = schedSnap.data();
+
+                            if (scheduleData.busDriverPairId) {
+                                // Get the bus plate number using the pairing ID
+                                plateNumber = await getBusPlateNumber(scheduleData.busDriverPairId);
                             }
                         }
+                    } catch (error) {
+                        console.error('Error getting schedule data:', error);
                     }
                 }
+
                 const statusInfo = statusDisplay[driver.status] || statusDisplay.available;
                 markers.push({
-                    id: docSnap.id,
+                    id: driver.id,
                     position: {
                         lat: driver.currentLocation.latitude,
                         lng: driver.currentLocation.longitude
@@ -77,7 +71,7 @@ onMounted(() => {
                             </div>
                             ${getUserTieSVG(statusInfo.svgColor)}
                             <div class="driver-tooltip">
-                                ${driver.status === 'on_duty' && licensePlate ? `Bus Plate: ${licensePlate}` : ''}
+                                ${driver.status === 'on_duty' ? `Bus Plate: ${plateNumber}` : `Status: ${driver.status}`}
                             </div>
                         </div>
                     `,
@@ -89,6 +83,29 @@ onMounted(() => {
     });
     onUnmounted(unsubscribe);
 });
+
+// Helper function
+const getBusPlateNumber = async (busDriverPairId) => {
+    try {
+        if (!busDriverPairId) return 'N/A';
+        const pairingDocRef = doc(busDriverPairingCollection, busDriverPairId);
+        const pairingSnap = await getDoc(pairingDocRef);
+        if (!pairingSnap.exists()) return 'N/A';
+        const pairingData = pairingSnap.data();
+
+        const busId = pairingData.busId;
+        if (!busId) return 'N/A';
+
+        const busDocRef = doc(busCollection, busId);
+        const busSnap = await getDoc(busDocRef);
+        if (!busSnap.exists()) return 'N/A';
+        const busData = busSnap.data();
+        return busData.plateNumber || 'N/A';
+    } catch (error) {
+        console.error('Error getting bus plate number:', error);
+        return 'N/A';
+    }
+};
 </script>
 
 <template>
@@ -97,7 +114,7 @@ onMounted(() => {
             <div class="col-12">
                 <div class="card">
                     <div class="card-header pb-0">
-                        <h6>Realtime Driver Location</h6>
+                        <h6>Live Driver Map</h6>
                     </div>
                     <div class="card-body p-0">
                         <GoogleMap :center="center" :zoom="zoom" :markers="driverMarkers" class="driver-map" />

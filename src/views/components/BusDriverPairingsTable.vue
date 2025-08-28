@@ -49,13 +49,17 @@ const displayPairings = computed(() => {
         return {
             ...pairing,
             busPlateNumber: bus ? bus.plateNumber : 'Unknown Bus',
-            driverName: driver ? driver.name : 'Unknown Driver'
+            driverName: driver ? driver.name : 'Unknown Driver',
+            driverStatus: driver ? driver.status : 'unknown',
+            isDriverDisabled: driver ? driver.status === 'disabled' : false
         };
     });
+
     let filteredPairings = mappedPairings;
     if (!showInactive.value) {
         filteredPairings = filteredPairings.filter(pairing => pairing.isActive);
     }
+
     if (sortColumn.value) {
         return [...filteredPairings].sort((a, b) => {
             let valA = a[sortColumn.value];
@@ -114,19 +118,26 @@ const visiblePages = computed(() => {
     } else {
         let start = Math.max(1, currentPage.value - 1);
         let end = Math.min(totalPages.value, currentPage.value + 1);
+
         if (currentPage.value <= 2) {
             end = maxVisible;
         } else if (currentPage.value >= totalPages.value - 1) {
             start = totalPages.value - maxVisible + 1;
         }
+
         for (let i = start; i <= end; i++) {
             pages.push(i);
         }
     }
+
     return pages;
 });
 const availableBuses = computed(() => props.buses);
-const availableDrivers = computed(() => props.drivers);
+const availableDrivers = computed(() => {
+    return props.drivers.filter(driver =>
+        driver.status !== 'disabled' && driver.status !== 'pending'
+    );
+});
 
 
 // Helper functions
@@ -138,6 +149,11 @@ function createDefaultPairing() {
         id: null
     };
 }
+const isDriverAvailable = (driverId) => {
+    if (!driverId) return true;
+    const driver = props.drivers.find(d => d.id === driverId);
+    return driver && driver.status !== 'disabled' && driver.status !== 'pending';
+};
 
 
 // CRUD operations
@@ -148,7 +164,11 @@ const savePairing = async () => {
         errors.value.general = 'Please select both a bus and a driver.';
         return;
     }
-
+    const selectedDriver = props.drivers.find(d => d.id === newPairing.value.driverId);
+    if (selectedDriver && selectedDriver.status === 'disabled') {
+        errors.value.general = 'Cannot pair with a disabled driver. Please select an active driver.';
+        return;
+    }
     const existingDuplicatePairing = props.pairings.find(p =>
         p.busId === newPairing.value.busId &&
         p.driverId === newPairing.value.driverId &&
@@ -248,7 +268,6 @@ const toggleShowInactive = () => {
         showInactive.value = true;
         sortColumn.value = 'isActive';
         sortDirection.value = 'desc';
-        // currentPage.value = 1; 
     } else {
         showInactive.value = false;
         sortColumn.value = null;
@@ -294,9 +313,17 @@ const promptDeactivatePairing = (id) => {
                     <label for="driverSelect" class="form-label">Driver Name</label>
                     <select id="driverSelect" class="form-select" v-model="newPairing.driverId" required>
                         <option value="" disabled>Select a Driver</option>
-                        <option v-for="driver in availableDrivers" :key="driver.id" :value="driver.id">{{ driver.name }}
+                        <option v-for="driver in availableDrivers" :key="driver.id" :value="driver.id"
+                            :disabled="driver.status === 'disabled' || driver.status === 'pending'"
+                            :class="{ 'text-muted': driver.status === 'disabled' || driver.status === 'pending' }">
+                            {{ driver.name }}
+                            <span v-if="driver.status === 'disabled'">(Disabled)</span>
+                            <span v-if="driver.status === 'pending'">(Pending)</span>
                         </option>
                     </select>
+                    <div v-if="!isDriverAvailable(newPairing.driverId)" class="invalid-feedback">
+                        Selected driver is not available
+                    </div>
                 </div>
             </div>
 
@@ -357,7 +384,11 @@ const promptDeactivatePairing = (id) => {
                             <p class="text-sm font-weight-bold mb-0">{{ pairing.busPlateNumber }}</p>
                         </td>
                         <td>
-                            <p class="text-sm font-weight-bold mb-0">{{ pairing.driverName }}</p>
+                            <p class="text-sm font-weight-bold mb-0"
+                                :class="{ 'text-decoration-line-through': pairing.isDriverDisabled }">
+                                {{ pairing.driverName }}
+                                <span v-if="pairing.isDriverDisabled" class="text-muted ms-1">(disabled)</span>
+                            </p>
                         </td>
                         <td>
                             <span

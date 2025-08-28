@@ -5,7 +5,7 @@ import { scheduleCollection, routeCollection, rPointCollection, busDriverPairing
 import { query, where, doc, getDoc, getDocs, onSnapshot, addDoc, Timestamp, updateDoc, deleteDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { sendPushNotification } from "@/utils/firebaseNotifications";
-import { calculateRouteDurations } from '@/utils/googleMapsLoader.js';
+import { loadGoogleMaps, calculateRouteDurations } from '@/utils/googleMapsLoader.js';
 import BusDriverPairingsTable from '@/views/components/BusDriverPairingsTable.vue';
 import ArgonButton from "@/components/ArgonButton.vue";
 import ArgonInput from "@/components/ArgonInput.vue";
@@ -85,7 +85,8 @@ const unsubscribeSchedules = ref(null);
 
 // Lifecycle hooks
 onMounted(async () => {
-    const routeId = route.params.id;
+    await loadGoogleMaps();
+  const routeId = route.params.id;
     if (!routeId) {
         console.error("Route ID is missing from URL parameters.");
         errors.value.general = "Error: Route information is not fully loaded. Please wait a moment and try again.";
@@ -279,7 +280,7 @@ const formatTime = (date) => {
 };
 const formatDateTime = (timestamp) => {
     if (!timestamp) return '';
-    return format(timestamp.toDate(), 'MMM d, yyyy h:mm a');
+    return format(timestamp.toDate(), 'd MMM, yyyy h:mm a');
 };
 const formatQueueTime = (totalMinutes) => {
     const { days, hours, minutes } = convertFromMinutes(totalMinutes);
@@ -416,6 +417,10 @@ const getBusDisplay = (busId) => {
     if (!bus) return 'Unknown Bus';
     const isActivePaired = activebusDriverPairs.value.some(pair => pair.busId === busId);
     return isActivePaired ? bus.plateNumber : `${bus.plateNumber} (Not Active Pairing)`;
+};
+const getBusPlateNumber = (busId) => {
+    const bus = buses.value.find(b => b.id === busId);
+    return bus ? bus.plateNumber : 'Unknown Bus';
 };
 const getTotalQueuedStudents = (schedules) => {
     let totalStudents = 0;
@@ -708,18 +713,41 @@ const validateAssignments = () => {
     
     for (const assignment of modalAssignments.value) {
         if (assignment.driverId && assignment.busId) {
-            const foundPair = busDriverPairings.value.find(
+            const existingPair = busDriverPairings.value.find(
                 pair => pair.driverId === assignment.driverId &&
-                    pair.busId === assignment.busId &&
-                    pair.isActive
+                        pair.busId === assignment.busId
             );
-            if (!foundPair) {
-                errors.value.assignments = "The driver and bus you selected are not an active team. Please choose an existing team or create a new one.";
+            if (!existingPair) {
+                errors.value.assignments = "The driver and bus you selected are not paired at all.";
                 isValid = false;
+            } else {
+                if (!existingPair.isActive) {
+                    const wasAlreadyAssigned = selectedScheduleGroup.value.some(
+                        s => s.busDriverPairId === existingPair.id
+                    );
+                    if (wasAlreadyAssigned) {
+                        assignment.pairId = existingPair.id; // keep old inactive pair
+                    } else {
+                        errors.value.assignments = "The driver and bus you selected are not an active team. Please choose an existing team or create a new one.";
+                        isValid = false;
+                    }
+                } else {
+                    assignment.pairId = existingPair.id;
+                }
             }
-            else {
-                assignment.pairId = foundPair.id;
-            }
+
+            // const foundPair = busDriverPairings.value.find(
+            //     pair => pair.driverId === assignment.driverId &&
+            //         pair.busId === assignment.busId &&
+            //         pair.isActive
+            // );
+            // if (!foundPair) {
+            //     errors.value.assignments = "The driver and bus you selected are not an active team. Please choose an existing team or create a new one.";
+            //     isValid = false;
+            // }
+            // else {
+            //     assignment.pairId = foundPair.id;
+            // }
         } else if (assignment.driverId || assignment.busId) {
             if (assignment.driverId && !assignment.busId) {
                 const driverHasActivePairs = busDriverPairings.value.some(
@@ -1096,11 +1124,16 @@ const executeScheduleUpdates = async (schedulesToDelete, schedulesToUpdate, newP
                     const pair = busDriverPairings.value.find(p => p.id === data.busDriverPairId);
                     if (pair && pair.driverId) {
                         notifications.push({
+                            type: 'cancelled_assignment',
                             driverId: pair.driverId,
-                            type: 'cancel',
+                            routeId: currentRoute.value.id,
                             routeName: currentRoute.value.name,
-                            routeType: activeTab.value,
-                            scheduledTime: data.scheduledDatetime
+                            scheduleType: activeTab.value,
+                            busDriverPairId: data.busDriverPairId,
+                            busPlateNumber: getBusPlateNumber(getPairBusId(data.busDriverPairId)),
+                            scheduledTime: data.scheduledDatetime,
+                            title: 'Assignment Cancelled',
+                            body: `Your assignment for ${currentRoute.value.name} at ${formatDateTime(data.scheduledDatetime)} has been cancelled.`
                         });
                     }
                 }
@@ -1123,11 +1156,16 @@ const executeScheduleUpdates = async (schedulesToDelete, schedulesToUpdate, newP
                         const oldDriverId = getPairDriverId(oldData.busDriverPairId);
                         if (oldDriverId) {
                             notifications.push({
+                                type: 'cancelled_assignment',
                                 driverId: oldDriverId,
-                                type: 'cancel',
+                                routeId: currentRoute.value.id,
                                 routeName: currentRoute.value.name,
-                                routeType: activeTab.value,
-                                scheduledTime: oldData.scheduledDatetime
+                                scheduleType: activeTab.value,
+                                busDriverPairId: oldData.busDriverPairId,
+                                busPlateNumber: getBusPlateNumber(getPairBusId(oldData.busDriverPairId)),
+                                scheduledTime: oldData.scheduledDatetime,
+                                title: 'Assignment Cancelled',
+                                body: `Your assignment for ${currentRoute.value.name} at ${formatDateTime(oldData.scheduledDatetime)} has been cancelled.`
                             });
                         }
                     }
@@ -1135,11 +1173,16 @@ const executeScheduleUpdates = async (schedulesToDelete, schedulesToUpdate, newP
                         const newDriverId = getPairDriverId(newPairId);
                         if (newDriverId) {
                             notifications.push({
+                                type: 'new_assignment',
                                 driverId: newDriverId,
-                                type: 'assign',
+                                routeId: currentRoute.value.id,
                                 routeName: currentRoute.value.name,
-                                routeType: activeTab.value,
-                                scheduledTime: oldData.scheduledDatetime
+                                scheduleType: activeTab.value,
+                                busDriverPairId: newPairId,
+                                busPlateNumber: getBusPlateNumber(getPairBusId(newPairId)),
+                                scheduledTime: oldData.scheduledDatetime,
+                                title: 'New Assignment',
+                                body: `You've been assigned to ${currentRoute.value.name} at ${formatDateTime(oldData.scheduledDatetime)}.`
                             });
                         }
                     }
@@ -1150,47 +1193,70 @@ const executeScheduleUpdates = async (schedulesToDelete, schedulesToUpdate, newP
             console.error("Error updating schedule:", error);
         }
     }
-    const baseScheduleData = groupSchedules.length > 0 ? { ...groupSchedules[0] } : null;
+
+    let baseScheduleData = null;
+    const scheduledSchedule = groupSchedules.find(s => s.status === 'scheduled');
+    if (scheduledSchedule) {
+        baseScheduleData = { ...scheduledSchedule };
+    } else if (groupSchedules.length > 0) {
+        baseScheduleData = { ...groupSchedules[0] };
+    }
+
+    // const baseScheduleData = groupSchedules.length > 0 ? { ...groupSchedules[0] } : null;
     if (!baseScheduleData && newPairsToCreateDocs.length > 0) {
         errors.value.assignments = "Could not create new assignment as some information is missing.";
         return false;
     }
     for (const pairId of newPairsToCreateDocs) {
         if (baseScheduleData) {
-            const newPair = busDriverPairings.value.find(p => p.id === pairId);
+            // const newPair = busDriverPairings.value.find(p => p.id === pairId);
             const newSchedule = {
-                ...baseScheduleData,
+                type: baseScheduleData.type,
+                routeId: baseScheduleData.routeId,
                 busDriverPairId: pairId,
+                scheduledDatetime: baseScheduleData.scheduledDatetime,
                 status: 'scheduled',
+                queueEnabled: baseScheduleData.queueEnabled,
+                queueOpenMinutes: baseScheduleData.queueOpenMinutes,
+                queueCloseMinutes: baseScheduleData.queueCloseMinutes,
+                rpoints: baseScheduleData.rpoints.map(rp => ({
+                    rpointId: rp.rpointId,
+                    planTime: rp.planTime,
+                    actTime: null,
+                    latenessMinutes: 0,
+                    status: 'scheduled',
+                    queuedStudents: [],
+                }))
             };
             delete newSchedule.id;
             const newDocRef = await addDoc(scheduleCollection, newSchedule);
             await updateDoc(newDocRef, { scheduleId: newDocRef.id });
 
-            if (newPair && newPair.driverId) {
-                notifications.push({
-                    driverId: newPair.driverId,
-                    type: 'assign',
-                    routeName: currentRoute.value.name,
-                    routeType: activeTab.value,
-                    scheduledTime: baseScheduleData.scheduledDatetime
-                });
-            }
+            // if (newPair && newPair.driverId) {
+            //     notifications.push({
+            //         driverId: newPair.driverId,
+            //         type: 'new_assignment',
+            //         routeName: currentRoute.value.name,
+            //         scheduleType: activeTab.value,
+            //         scheduledTime: baseScheduleData.scheduledDatetime
+            //     });
+            // }
         }
     }
 
     for (const n of notifications) {
         try {
             await sendPushNotification(
-                n.driverId,
                 n.type,
+                n.driverId,
+                n.routeId,
                 n.routeName,
-                n.routeType,
+                n.scheduleType,
+                n.busDriverPairId,
+                n.busPlateNumber,
                 n.scheduledTime,
-                n.type === 'cancel' ? 'Assignment Cancelled' : 'New Assignment',
-                n.type === 'cancel'
-                    ? `Your assignment for ${n.routeName} at ${formatDateTime(n.scheduledTime)} has been cancelled`
-                    : `You've been assigned to ${n.routeName} at ${formatDateTime(n.scheduledTime)}`,
+                n.title,
+                n.body
             );
         } catch (error) {
             console.error(`Failed to send '${n.type}' notification to driver: ${n.driverId}`, error);
@@ -1229,10 +1295,42 @@ const saveAssignment = async () => {
 const deleteOrCancelSchedule = async () => {
     const group = scheduleToActOn.value;
     if (!group || group.length === 0) return;
+     const hasCompleted = group.some(s => s.status === 'completed');
+    if (hasCompleted) {
+        errors.value.general = "Cannot delete or cancel completed schedules.";
+        isLoading.value = false;
+        return;
+    }
+
     isLoading.value = true;
     errors.value.general = "";
     try {
         if (actionType.value === 'delete') {
+            const notificationPromises = group
+                .filter(schedule => schedule.busDriverPairId)
+                .map(async (schedule) => {
+                    const driverId = getPairDriverId(schedule.busDriverPairId);
+                    if (driverId) {
+                        await sendPushNotification(
+                            'cancelled_assignment',
+                            driverId,
+                            currentRoute.value.id,
+                            currentRoute.value.name,
+                            schedule.type,
+                            schedule.busDriverPairId,
+                            getBusPlateNumber(getPairBusId(schedule.busDriverPairId)),
+                            schedule.scheduledDatetime,
+                            'Assignment Cancelled',
+                            `Your assignment for ${currentRoute.value.name} at ${formatDateTime(schedule.scheduledDatetime)} has been cancelled.`
+                        );
+                    }
+                    return null;
+                })
+                .filter(promise => promise !== null);
+
+            if (notificationPromises.length > 0) {
+                await Promise.all(notificationPromises);
+            }
             const deletePromises = group.map(sched =>
                 deleteDoc(doc(scheduleCollection, sched.id))
             );
@@ -1240,14 +1338,17 @@ const deleteOrCancelSchedule = async () => {
         } else if (actionType.value === 'cancel') {
             const notificationPromises = group
                 .filter(schedule => schedule.busDriverPairId)
-                .map(schedule => {
+                .map(async (schedule) => {
                     const driverId = getPairDriverId(schedule.busDriverPairId);
                     if (driverId) {
-                        return sendPushNotification(
+                        await sendPushNotification(
+                            'cancelled_assignment',
                             driverId,
-                            'cancel',
+                            currentRoute.value.id,
                             currentRoute.value.name,
                             schedule.type,
+                            schedule.busDriverPairId,
+                            getBusPlateNumber(getPairBusId(schedule.busDriverPairId)),
                             schedule.scheduledDatetime,
                             'Assignment Cancelled',
                             `Your assignment for ${currentRoute.value.name} at ${formatDateTime(schedule.scheduledDatetime)} has been cancelled.`
@@ -1291,6 +1392,20 @@ const deleteAssignment = async () => {
             if (modalAssignments.value[index]) {
                 modalAssignments.value[index].status = 'cancelled';
             }
+            if (assignment.driverId) {
+                await sendPushNotification(
+                    'cancelled_assignment',
+                    assignment.driverId,
+                    currentRoute.value.id,
+                    currentRoute.value.name,
+                    selectedScheduleForUpdate.value?.type || activeTab.value,
+                    assignment.pairId,
+                    getBusPlateNumber(assignment.busId),
+                    selectedScheduleForUpdate.value?.scheduledDatetime,
+                    'Assignment Cancelled',
+                    `Your assignment for ${currentRoute.value.name} at ${formatDateTime(selectedScheduleForUpdate.value?.scheduledDatetime)} has been cancelled.`
+                );
+            }
             setupRealtimeListeners();
         } catch (error) {
             console.error("Error cancelling schedule:", error);
@@ -1308,6 +1423,22 @@ const deleteAssignment = async () => {
     try {
         const assignedAssignmentsInModal = modalAssignments.value.filter(a => a.driverId && a.busId);
         const scheduleIdToDelete = assignment.scheduleId;
+
+        if (assignment.driverId) {
+            await sendPushNotification(
+                'cancelled_assignment',
+                assignment.driverId,
+                currentRoute.value.id,
+                currentRoute.value.name,
+                selectedScheduleForUpdate.value?.type || activeTab.value,
+                assignment.pairId,
+                getBusPlateNumber(assignment.busId),
+                selectedScheduleForUpdate.value?.scheduledDatetime,
+                'Assignment Cancelled',
+                `Your assignment for ${currentRoute.value.name} at ${formatDateTime(selectedScheduleForUpdate.value?.scheduledDatetime)} has been cancelled.`
+            );
+        }
+
         if (!scheduleIdToDelete) {
             modalAssignments.value.splice(index, 1);
             if (modalAssignments.value.length === 0) {
@@ -1488,21 +1619,28 @@ const getFilteredDrivers = (selectedBusId, currentIndex) => {
     const allActivePairs = busDriverPairings.value.filter(pair => pair.isActive);
     return drivers.value.filter(driver => {
         const currentDriverId = modalAssignments.value[currentIndex]?.driverId;
-        if (driver.id !== currentDriverId && currentlySelectedDriverIdsInModal.has(driver.id)) {
-            return false;
-        }
+        // if (driver.id !== currentDriverId && currentlySelectedDriverIdsInModal.has(driver.id)) {
+        //     return false;
+        // }
+
+        // Always keep the currently selected driver, even if inactive
+        if (driver.id === currentDriverId) return true;
+
+        // Prevent duplicate selection
+        if (currentlySelectedDriverIdsInModal.has(driver.id)) return false;
         const driverIsAssignedInGroup = allActivePairs.some(pair =>
             pair.driverId === driver.id && assignedPairIdsInGroup.has(pair.id)
         );
-        if (driver.id !== currentDriverId && driverIsAssignedInGroup) {
-            return false;
-        }
+        if (driverIsAssignedInGroup) return false;
+        // if (driver.id !== currentDriverId && driverIsAssignedInGroup) {
+        //     return false;
+        // }
         if (selectedBusId) {
             return allActivePairs.some(pair =>
                 pair.driverId === driver.id && pair.busId === selectedBusId
             );
         }
-        return true;
+        return allActivePairs.some(pair => pair.driverId === driver.id);
     });
 };
 const getFilteredBuses = (selectedDriverId, currentIndex) => {
@@ -1520,15 +1658,24 @@ const getFilteredBuses = (selectedDriverId, currentIndex) => {
     const allActivePairs = busDriverPairings.value.filter(pair => pair.isActive);
     return buses.value.filter(bus => {
         const currentBusId = modalAssignments.value[currentIndex]?.busId;
-        if (bus.id !== currentBusId && currentlySelectedBusIdsInModal.has(bus.id)) {
-            return false;
-        }
+        // if (bus.id !== currentBusId && currentlySelectedBusIdsInModal.has(bus.id)) {
+        //     return false;
+        // }
+
+        // Always keep the currently selected bus, even if inactive
+        if (bus.id === currentBusId) return true;
+
+        // Prevent duplicate selection
+        if (currentlySelectedBusIdsInModal.has(bus.id)) return false;
+
         const busIsAssignedInGroup = allActivePairs.some(pair =>
             pair.busId === bus.id && assignedPairIdsInGroup.has(pair.id)
         );
-        if (bus.id !== currentBusId && busIsAssignedInGroup) {
-            return false;
-        }
+        if (busIsAssignedInGroup) return false;
+
+        // if (bus.id !== currentBusId && busIsAssignedInGroup) {
+        //     return false;
+        // }
         if (selectedDriverId) {
             return allActivePairs.some(pair =>
                 pair.busId === bus.id && pair.driverId === selectedDriverId
@@ -1695,8 +1842,16 @@ const confirmDeleteAssignment = (assignment, index) => {
     showDeleteConfirmModal.value = true;
 };
 const confirmDeleteSchedule = () => {
-    const allScheduled = selectedScheduleGroup.value.every(s => s.status === 'scheduled'); scheduleToActOn.value = [...selectedScheduleGroup.value];
-    scheduleToActOn.value = selectedScheduleGroup.value;
+    const hasCompleted = selectedScheduleGroup.value.some(s => s.status === 'completed');
+    if (hasCompleted) {
+        actionType.value = 'completed';
+        scheduleToActOn.value = [...selectedScheduleGroup.value];
+        showDeleteConfirmModal.value = true;
+        return;
+    }
+    const allScheduled = selectedScheduleGroup.value.every(s => s.status === 'scheduled');
+    scheduleToActOn.value = [...selectedScheduleGroup.value];
+    // scheduleToActOn.value = selectedScheduleGroup.value;
     if (allScheduled) {
         actionType.value = 'delete';
     } else {
@@ -2162,8 +2317,13 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                     </div>
 
                     <div class="d-flex justify-content-end gap-2 mt-4">
-                        <argon-button color="danger" v-if="showUpdateScheduleModal" @click="confirmDeleteSchedule()">
-                            Delete Schedule
+                        <argon-button color="danger" v-if="showUpdateScheduleModal" @click="confirmDeleteSchedule()"
+                            :disabled="isLoading">
+                            <span v-if="!isLoading">Delete Schedule</span>
+                            <span v-else>
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                Deleting...
+                            </span>
                         </argon-button>
 
                         <argon-button color="secondary" v-if="currentStep > 1 && createScheduleForm.type !== 'event'"
@@ -2227,9 +2387,9 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                                 </div>
 
                                 <div class="col-md-2 d-flex align-items-end">
-                                    <argon-button color="danger" icon
+                                    <argon-button color="danger" class="mt-2"
                                         @click="confirmDeleteAssignment(assignment, index)"
-                                        :disabled="assignment.status === 'cancelled'">
+                                        :disabled="assignment.status === 'cancelled' || assignment.status === 'completed'">
                                         <i class="fas fa-trash"></i>
                                     </argon-button>
                                 </div>
@@ -2309,12 +2469,19 @@ watch(() => createScheduleForm.value.time, (newTime) => {
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Confirm Action</h5>
+                    <h5 class="modal-title">
+                        <span v-if="actionType === 'completed'">Cannot Delete Schedule</span>
+                        <span v-else>Confirm Action</span>
+                    </h5>
                     <button type="button" class="btn-close" @click="showDeleteConfirmModal = false"></button>
                 </div>
                 <div class="modal-body">
                     <div v-if="scheduleToActOn">
-                        <div v-if="actionType === 'delete'">
+                        <div v-if="actionType === 'completed'">
+                            <p class="mb-0 mt-2">One or more schedules in this group are <strong>already
+                                    completed</strong> and cannot be deleted or cancelled.</p>
+                        </div>
+                        <div v-else-if="actionType === 'delete'">
                             <p>Are you sure? This will delete all assignments permanently.</p>
                         </div>
                         <div v-else-if="actionType === 'cancel'">
@@ -2325,7 +2492,7 @@ watch(() => createScheduleForm.value.time, (newTime) => {
 
                     <div v-else>
                         <p v-if="assignmentToDelete && isAssignmentLocked(assignmentToDelete)">
-                            This schedule is already in progress or completed. Continuing will mark it as
+                            This schedule is already in progress. Continuing will mark it as
                             <strong>cancelled</strong>.
                         </p>
                         <p v-else>
@@ -2334,13 +2501,24 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                     </div>
 
                     <div class="d-flex justify-content-end gap-2 mt-4">
-                        <argon-button color="danger"
-                            @click="scheduleToActOn ? deleteOrCancelSchedule() : deleteAssignment()">
-                            {{
-                            scheduleToActOn
-                            ? (actionType === 'cancel' ? 'Confirm Cancel' : 'Confirm Delete')
-                            : (isAssignmentLocked(assignmentToDelete) ? 'Confirm Cancel' : 'Confirm Delete')
-                            }}
+                        <argon-button color="secondary" v-if="actionType === 'completed'"
+                            @click="showDeleteConfirmModal = false">
+                            Close
+                        </argon-button>
+                        <argon-button color="danger" v-else
+                            @click="scheduleToActOn ? deleteOrCancelSchedule() : deleteAssignment()"
+                            :disabled="isLoading">
+                            <span v-if="!isLoading">
+                                {{
+                                scheduleToActOn
+                                ? (actionType === 'cancel' ? 'Confirm Cancel' : 'Confirm Delete')
+                                : (isAssignmentLocked(assignmentToDelete) ? 'Confirm Cancel' : 'Confirm Delete')
+                                }}
+                            </span>
+                            <span v-else>
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                {{ scheduleToActOn && actionType === 'cancel' ? 'Cancelling...' : 'Deleting...' }}
+                            </span>
                         </argon-button>
                     </div>
                 </div>

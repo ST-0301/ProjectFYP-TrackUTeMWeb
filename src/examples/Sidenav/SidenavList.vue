@@ -29,8 +29,8 @@ const getRoute = () => {
       </li> -->
 
       <li class="nav-item">
-        <sidenav-item to="/realtime-location" :class="getRoute() === 'realtime-location' ? 'active' : ''"
-          navText="Realtime Location">
+        <sidenav-item to="/live-driver-map" :class="getRoute() === 'live-driver-map' ? 'active' : ''"
+          navText="Live Driver Map">
           <template v-slot:icon>
             <i class="fas fa-map-marker-alt text-success text-sm opacity-10"></i>
           </template>
