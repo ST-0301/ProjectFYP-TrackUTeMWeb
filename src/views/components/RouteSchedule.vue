@@ -1360,8 +1360,6 @@ const deleteOrCancelSchedule = async () => {
 
             if (notificationPromises.length > 0) {
                 await Promise.all(notificationPromises);
-            } else {
-                console.log("No assigned drivers were found to notify.");
             }
             const updatePromises = group.map(sched => {
                 updateDoc(doc(scheduleCollection, sched.id), {
