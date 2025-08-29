@@ -13,7 +13,14 @@ import ArgonInput from "@/components/ArgonInput.vue";
 
 const route = useRoute();
 // Constants
+const MAX_REPEAT_MONTHS = 1;
 const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const cancelReasons = [
+    "Driver Unavailability",
+    "Vehicle Maintenance",
+    "Operational Decision"
+];
+
 // Reactive state
 // Date/Time related
 const currentWeekStart = ref(new Date());
@@ -158,12 +165,12 @@ const maxRepeatUntilDate = computed(() => {
     if (!currentSelectedFullDate.value) {
         const today = new Date();
         const maxDate = new Date(today);
-        maxDate.setMonth(maxDate.getMonth() + 3);
+        maxDate.setMonth(maxDate.getMonth() + MAX_REPEAT_MONTHS);
         return maxDate.toISOString().split('T')[0];
     }
     const startDate = new Date(currentSelectedFullDate.value);
     const maxDate = new Date(startDate);
-    maxDate.setMonth(maxDate.getMonth() + 3);
+    maxDate.setMonth(maxDate.getMonth() + MAX_REPEAT_MONTHS);
     return maxDate.toISOString().split('T')[0];
 });
 const allUniqueTimes = computed(() => {
@@ -588,10 +595,11 @@ const validateStep1 = () => {
                 errors.value.repeatUntilDate = "The end date for the repeating schedule must be after the start date.";
                 isValid = false;
             }
-            const threeMonthsLater = new Date(fromDate);
-            threeMonthsLater.setMonth(threeMonthsLater.getMonth() + 3);
-            if (repeatEnd > threeMonthsLater) {
-                errors.value.repeatUntilDate = (errors.value.repeatUntilDate ? errors.value.repeatUntilDate + '\n' : '') + "The end date cannot be more than 3 months from the start date.";
+            const maxMonthsLater = new Date(fromDate);
+            maxMonthsLater.setMonth(maxMonthsLater.getMonth() + MAX_REPEAT_MONTHS);
+            if (repeatEnd > maxMonthsLater) {
+                errors.value.repeatUntilDate = (errors.value.repeatUntilDate ? errors.value.repeatUntilDate + '\n' : '') +
+                    `The end date cannot be more than ${MAX_REPEAT_MONTHS} months from the start date.`;
                 isValid = false;
             }
         }
@@ -1132,6 +1140,7 @@ const executeScheduleUpdates = async (schedulesToDelete, schedulesToUpdate, newP
                             busDriverPairId: data.busDriverPairId,
                             busPlateNumber: getBusPlateNumber(getPairBusId(data.busDriverPairId)),
                             scheduledTime: data.scheduledDatetime,
+                            cancelReason: cancelReason.value,
                             title: 'Assignment Cancelled',
                             body: `Your assignment for ${currentRoute.value.name} at ${formatDateTime(data.scheduledDatetime)} has been cancelled.`
                         });
@@ -1164,6 +1173,7 @@ const executeScheduleUpdates = async (schedulesToDelete, schedulesToUpdate, newP
                                 busDriverPairId: oldData.busDriverPairId,
                                 busPlateNumber: getBusPlateNumber(getPairBusId(oldData.busDriverPairId)),
                                 scheduledTime: oldData.scheduledDatetime,
+                                cancelReason: cancelReason.value,
                                 title: 'Assignment Cancelled',
                                 body: `Your assignment for ${currentRoute.value.name} at ${formatDateTime(oldData.scheduledDatetime)} has been cancelled.`
                             });
@@ -1181,6 +1191,7 @@ const executeScheduleUpdates = async (schedulesToDelete, schedulesToUpdate, newP
                                 busDriverPairId: newPairId,
                                 busPlateNumber: getBusPlateNumber(getPairBusId(newPairId)),
                                 scheduledTime: oldData.scheduledDatetime,
+                                cancelReason: null,
                                 title: 'New Assignment',
                                 body: `You've been assigned to ${currentRoute.value.name} at ${formatDateTime(oldData.scheduledDatetime)}.`
                             });
@@ -1231,16 +1242,6 @@ const executeScheduleUpdates = async (schedulesToDelete, schedulesToUpdate, newP
             delete newSchedule.id;
             const newDocRef = await addDoc(scheduleCollection, newSchedule);
             await updateDoc(newDocRef, { scheduleId: newDocRef.id });
-
-            // if (newPair && newPair.driverId) {
-            //     notifications.push({
-            //         driverId: newPair.driverId,
-            //         type: 'new_assignment',
-            //         routeName: currentRoute.value.name,
-            //         scheduleType: activeTab.value,
-            //         scheduledTime: baseScheduleData.scheduledDatetime
-            //     });
-            // }
         }
     }
 
@@ -1255,6 +1256,7 @@ const executeScheduleUpdates = async (schedulesToDelete, schedulesToUpdate, newP
                 n.busDriverPairId,
                 n.busPlateNumber,
                 n.scheduledTime,
+                n.cancelReason,
                 n.title,
                 n.body
             );
@@ -1320,6 +1322,7 @@ const deleteOrCancelSchedule = async () => {
                             schedule.busDriverPairId,
                             getBusPlateNumber(getPairBusId(schedule.busDriverPairId)),
                             schedule.scheduledDatetime,
+                            cancelReason.value,
                             'Assignment Cancelled',
                             `Your assignment for ${currentRoute.value.name} at ${formatDateTime(schedule.scheduledDatetime)} has been cancelled.`
                         );
@@ -1350,6 +1353,7 @@ const deleteOrCancelSchedule = async () => {
                             schedule.busDriverPairId,
                             getBusPlateNumber(getPairBusId(schedule.busDriverPairId)),
                             schedule.scheduledDatetime,
+                            cancelReason.value,
                             'Assignment Cancelled',
                             `Your assignment for ${currentRoute.value.name} at ${formatDateTime(schedule.scheduledDatetime)} has been cancelled.`
                         );
@@ -1400,6 +1404,7 @@ const deleteAssignment = async () => {
                     assignment.pairId,
                     getBusPlateNumber(assignment.busId),
                     selectedScheduleForUpdate.value?.scheduledDatetime,
+                    cancelReason.value,
                     'Assignment Cancelled',
                     `Your assignment for ${currentRoute.value.name} at ${formatDateTime(selectedScheduleForUpdate.value?.scheduledDatetime)} has been cancelled.`
                 );
@@ -1432,6 +1437,7 @@ const deleteAssignment = async () => {
                 assignment.pairId,
                 getBusPlateNumber(assignment.busId),
                 selectedScheduleForUpdate.value?.scheduledDatetime,
+                cancelReason.value,
                 'Assignment Cancelled',
                 `Your assignment for ${currentRoute.value.name} at ${formatDateTime(selectedScheduleForUpdate.value?.scheduledDatetime)} has been cancelled.`
             );
@@ -2077,8 +2083,8 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                                                     <span class="badge px-2 py-1 text-white"
                                                         :class="getScheduleStatusClass(getGroupedStatus(getSchedulesForCell(entry.fullDate, activeTab, timeSlot)))">
                                                         {{ getGroupedStatus(getSchedulesForCell(entry.fullDate,
-                                                            activeTab,
-                                                            timeSlot)).replace('_', ' ') }}
+                                                        activeTab,
+                                                        timeSlot)).replace('_', ' ') }}
                                                     </span>
                                                 </div>
                                                 <div class="d-flex justify-content-between text-dark mb-1">
@@ -2091,11 +2097,11 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                                                     <template v-else>
                                                         <span class="me-2">
                                                             {{ getCounts(getSchedulesForCell(entry.fullDate, activeTab,
-                                                                timeSlot)).busDriverPairs }} Driver
+                                                            timeSlot)).busDriverPairs }} Driver
                                                         </span>
                                                         <span>
                                                             {{ getCounts(getSchedulesForCell(entry.fullDate, activeTab,
-                                                                timeSlot)).busDriverPairs }} Bus
+                                                            timeSlot)).busDriverPairs }} Bus
                                                         </span>
                                                     </template>
                                                 </div>
@@ -2106,7 +2112,7 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                                                             : 'text-muted'
                                                     ]">👥 Queue: {{
                                                         getTotalQueuedStudents(getSchedulesForCell(entry.fullDate,
-                                                            activeTab, timeSlot)) }}</span>
+                                                        activeTab, timeSlot)) }}</span>
                                                 </div>
                                             </template>
                                         </div>
@@ -2134,7 +2140,7 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                     <h5 class="modal-title">
                         {{ selectedScheduleForUpdate ? 'Update Schedule' : 'Add New Schedule' }}
                         <span v-if="createScheduleForm.type !== 'event'"> (Step {{ currentStep
-                        }} of 3)</span>
+                            }} of 3)</span>
                     </h5>
                     <button type="button" class="btn-close" @click="closeModal"></button>
                 </div>
@@ -2194,9 +2200,10 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                                         v-model="createScheduleForm.repeatUntilDate" :min="currentSelectedFullDate"
                                         :max="maxRepeatUntilDate" required />
                                     <p class="text-xs text-muted mt-1">
-                                        Maximum 3 months from {{ currentSelectedFullDate ? new
-                                            Date(currentSelectedFullDate).toLocaleDateString("en-GB")
-                                            : 'the start date'
+                                        Maximum {{ MAX_REPEAT_MONTHS }} {{ MAX_REPEAT_MONTHS === 1 ? 'month' : 'months'
+                                        }} from {{ currentSelectedFullDate ? new
+                                        Date(currentSelectedFullDate).toLocaleDateString("en-GB")
+                                        : 'the start date'
                                         }}.
                                     </p>
                                     <div v-if="errors.repeatUntilDate" class="text-danger text-sm mt-1">
@@ -2403,8 +2410,8 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                                     class="ni ni-fat-add"></i> Add Assignment</argon-button>
                         </div>
                         <div class="mb-3">
-                            <argon-button color="info" size="sm" variant="gradient" @click="showPairingModal = true"
-                                class="me-2">
+                            <argon-button color="success" variant="link" size="sm" @click="showPairingModal = true"
+                                class="mt-2 mb-2">
                                 <i class="fas fa-link"></i> View Pairings
                             </argon-button>
                         </div>
@@ -2469,6 +2476,7 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                 <div class="modal-header">
                     <h5 class="modal-title">
                         <span v-if="actionType === 'completed'">Cannot Delete Schedule</span>
+                        <span v-else-if="assignmentToDelete">Cancel Assignment</span>
                         <span v-else>Confirm Action</span>
                     </h5>
                     <button type="button" class="btn-close" @click="showDeleteConfirmModal = false"></button>
@@ -2483,8 +2491,12 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                             <p>Are you sure? This will delete all assignments permanently.</p>
                         </div>
                         <div v-else-if="actionType === 'cancel'">
-                            <p>This will cancel all assignments. Please provide a reason (optional):</p>
-                            <argon-input id="cancelReason" v-model="cancelReason" />
+                            <p>This will cancel all assignments. Please select a reason:</p>
+                            <select class="form-select" v-model="cancelReason" required>
+                                <option value="" disabled selected>Select a reason</option>
+                                <option v-for="reason in cancelReasons" :key="reason" :value="reason">{{ reason }}
+                                </option>
+                            </select>
                         </div>
                     </div>
 
@@ -2494,8 +2506,12 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                             <strong>cancelled</strong>.
                         </p>
                         <p v-else>
-                            Are you sure you want to remove this assignment?
+                            Please select a reason for removing this assignment:
                         </p>
+                        <select class="form-select mt-2" v-model="cancelReason" required>
+                            <option value="" disabled selected>Select a reason</option>
+                            <option v-for="reason in cancelReasons" :key="reason" :value="reason">{{ reason }}</option>
+                        </select>
                     </div>
 
                     <div class="d-flex justify-content-end gap-2 mt-4">
@@ -2505,12 +2521,12 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                         </argon-button>
                         <argon-button color="danger" v-else
                             @click="scheduleToActOn ? deleteOrCancelSchedule() : deleteAssignment()"
-                            :disabled="isLoading">
+                            :disabled="isLoading || !cancelReason">
                             <span v-if="!isLoading">
                                 {{
-                                    scheduleToActOn
-                                        ? (actionType === 'cancel' ? 'Confirm Cancel' : 'Confirm Delete')
-                                        : (isAssignmentLocked(assignmentToDelete) ? 'Confirm Cancel' : 'Confirm Delete')
+                                scheduleToActOn
+                                ? (actionType === 'cancel' ? 'Confirm Cancel' : 'Confirm Delete')
+                                : (isAssignmentLocked(assignmentToDelete) ? 'Confirm Cancel' : 'Confirm Delete')
                                 }}
                             </span>
                             <span v-else>
@@ -2537,7 +2553,7 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                     <div class="alert alert-danger">
                         <strong>Reason for Cancellation:</strong>
                         <p class="mb-0 fst-italic">{{ fullyCancelledSchedule.cancelReason || 'No reason provided.'
-                        }}
+                            }}
                         </p>
                     </div>
                     <hr>
@@ -2546,13 +2562,13 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                         <div class="col-md-6">
                             <p><strong class="text-sm">Route:</strong><br> {{ currentRoute.name }}</p>
                             <p><strong class="text-sm">Type:</strong><br> <span class="text-capitalize">{{
-                                fullyCancelledSchedule.type
-                            }}</span></p>
+                                    fullyCancelledSchedule.type
+                                    }}</span></p>
                         </div>
                         <div class="col-md-6">
                             <p><strong class="text-sm">Originally Scheduled For:</strong><br> {{
                                 formatDateTime(fullyCancelledSchedule.scheduledDatetime)
-                            }}</p>
+                                }}</p>
                         </div>
                     </div>
                     <div class="row mt-3" v-if="fullyCancelledSchedule.type !== 'event'">

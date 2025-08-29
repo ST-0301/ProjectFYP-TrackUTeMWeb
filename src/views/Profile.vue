@@ -74,7 +74,6 @@ onBeforeMount(() => {
   store.state.imageLayout = "profile-overview";
   store.state.showNavbar = false;
   store.state.showFooter = true;
-  store.state.hideConfigButton = true;
   body.classList.add("profile-overview");
 });
 onBeforeUnmount(() => {
@@ -82,7 +81,6 @@ onBeforeUnmount(() => {
   store.state.imageLayout = "default";
   store.state.showNavbar = true;
   store.state.showFooter = true;
-  store.state.hideConfigButton = false;
   body.classList.remove("profile-overview");
 });
 </script>
@@ -94,7 +92,7 @@ onBeforeUnmount(() => {
           margin-right: -24px;
           margin-left: -34%;
         ">
-        <span class="mask bg-gradient-success opacity-6"></span>
+        <span class="mask bg-gradient-trackutemblue opacity-6"></span>
       </div>
       <div class="card shadow-lg mt-n6">
         <div class="card-body p-3">
@@ -116,7 +114,8 @@ onBeforeUnmount(() => {
         <div class="card-header pb-0">
           <div class="d-flex align-items-center">
             <h6 class="mb-0">Edit Profile</h6>
-            <argon-button color="success" size="sm" class="ms-auto" @click="updateProfile" :disabled="isLoading">Update
+            <argon-button color="trackutemlightblue" size="sm" class="ms-auto text-white" @click="updateProfile"
+              :disabled="isLoading">Update
               Profile</argon-button>
           </div>
         </div>

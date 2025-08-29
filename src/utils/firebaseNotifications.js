@@ -37,6 +37,7 @@ export const sendPushNotification = async (
   busDriverPairId,
   busPlateNumber,
   scheduledTime,
+  cancelReason = null,
   title,
   body
 ) => {
@@ -105,6 +106,7 @@ export const sendPushNotification = async (
       busPlateNumber: busPlateNumber,
       scheduledDatetime: finalScheduledDatetime,
       latenessMinutes: 0,
+      cancelReason: cancelReason,
       title: title,
       body: body || `Update for route: ${routeName}`,
     };

@@ -304,11 +304,11 @@ watch([sortColumn, sortDirection], () => {
                         <div class="d-flex justify-content-between align-items-center">
                             <h6>Bus List</h6>
                             <div>
-                                <argon-button color="info" size="sm" variant="gradient" @click="showPairingModal = true"
-                                    class="me-2">
+                                <argon-button color="success" variant="link" size="sm" @click="showPairingModal = true"
+                                    class="me-3">
                                     <i class="fas fa-link"></i> View Pairings
                                 </argon-button>
-                                <argon-button color="success" size="sm" @click="addBus">
+                                <argon-button color="trackutemlightblue" size="sm" class="text-white" @click="addBus">
                                     <i class="ni ni-fat-add"></i> Add Bus
                                 </argon-button>
                             </div>
@@ -463,7 +463,7 @@ watch([sortColumn, sortDirection], () => {
                                                 <option value="inactive">Inactive</option>
                                             </select>
                                         </div>
-                                        
+
                                         <div class="d-flex justify-content-end gap-3 mt-4">
                                             <argon-button type="submit" color="success" variant="gradient">
                                                 {{ editingBus ? 'Update Bus' : 'Add Bus' }}

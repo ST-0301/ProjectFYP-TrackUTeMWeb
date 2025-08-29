@@ -28,10 +28,6 @@ const routes = [
   //   component: Dashboard,
   // },
   // {
-  //   path: "/tables",
-  //   name: "Tables",
-  //   component: Tables,
-  // },
   {
     path: "/live-driver-map",
     name: "Live Driver Map",
@@ -101,11 +97,6 @@ const routes = [
     name: "Signin",
     component: Signin,
   },
-  // {
-  //   path: "/signup",
-  //   name: "Signup",
-  //   component: Signup,
-  // },
 ];
 
 const createMyRouter = (store) => {

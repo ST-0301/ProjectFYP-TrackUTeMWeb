@@ -260,7 +260,7 @@ const validateEmail = async () => {
         return;
     }
     if (!emailPattern.test(email)) {
-        errors.value.email = 'Must be a valid UTEM email address';
+        errors.value.email = 'Must be a valid UTeM email address';
         return;
     }
     if (await checkExistingEmail()) {
@@ -567,11 +567,12 @@ watch([sortColumn, sortDirection], () => {
                         <div class="d-flex justify-content-between align-items-center">
                             <h6>Driver List</h6>
                             <div>
-                                <argon-button color="info" size="sm" variant="gradient" @click="showPairingModal = true"
-                                    class="me-2">
+                                <argon-button color="success" variant="link" size="sm" @click="showPairingModal = true"
+                                    class="me-3">
                                     <i class="fas fa-link"></i> View Pairings
                                 </argon-button>
-                                <argon-button color="success" size="sm" @click="addDriver">
+                                <argon-button color="trackutemlightblue" size="sm" class="text-white"
+                                    @click="addDriver">
                                     <i class="ni ni-fat-add"></i> Add Driver
                                 </argon-button>
                             </div>
@@ -792,7 +793,7 @@ watch([sortColumn, sortDirection], () => {
                                                     @change="currentDriver.status = $event.target.checked ? 'available' : 'disabled'"
                                                     :disabled="currentDriver.status === 'pending'">
                                                     Status: {{ currentDriver.status !== 'disabled' ? 'Available' :
-                                                        'Disabled' }}
+                                                    'Disabled' }}
                                                 </ArgonSwitch>
                                             </div>
                                         </div>

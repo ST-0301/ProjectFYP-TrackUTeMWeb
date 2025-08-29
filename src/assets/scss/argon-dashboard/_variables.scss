@@ -23,7 +23,7 @@ $gray-900: #212529 !default;
 $black: #000 !default;
 
 // fusv-enable
-
+$bluetrackutem: #1D58CA !default;
 $blue: #63b3ed !default;
 $indigo: #596cff !default;
 $purple: #6f42c1 !default;
@@ -37,6 +37,7 @@ $cyan: #0dcaf0 !default;
 
 // scss-docs-start colors-map
 $colors: (
+  "bluetrackutem": $bluetrackutem,
   "blue": $blue,
   "indigo": $indigo,
   "purple": $purple,
@@ -53,6 +54,8 @@ $colors: (
   ) !default;
 // scss-docs-end colors-map
 
+$trackutemblue: #1D58CA !default;
+$trackutemlightblue: #4591F2 !default;
 $primary: #5e72e4 !default;
 $secondary: #8392ab !default;
 $info: #11cdef !default;
@@ -64,6 +67,8 @@ $dark: $h-color !default;
 
 // scss-docs-start theme-colors-map
 $theme-colors: (
+  "trackutemblue": $trackutemblue,
+  "trackutemlightblue": $trackutemlightblue,
   "primary": $primary,
   "secondary": $secondary,
   "success": $success,
@@ -77,6 +82,9 @@ $theme-colors: (
 // scss-docs-end theme-colors-map
 
 // Gradient colors
+$trackutemblue-gradient: #52A3FF !default;
+$trackutemblue-gradient-state: #1D58CA !default;
+
 $primary-gradient: #5e72e4 !default;
 $primary-gradient-state: #825ee4 !default;
 
@@ -104,6 +112,9 @@ $light-gradient-state: #ebeff4 !default;
 $dark-gradient-dark: #323a54 !default;
 $dark-gradient-state-dark: #1a2035 !default;
 
+$text-gradient-bg-trackutemblue: linear-gradient(310deg,
+    $trackutemblue-gradient,
+    $trackutemblue-gradient-state) !default;
 $text-gradient-bg-primary: linear-gradient(310deg,
     $primary-gradient,
     $primary-gradient-state) !default;
@@ -124,6 +135,9 @@ $text-gradient-bg-dark: linear-gradient(310deg,
     $dark-gradient-state) !default;
 // Gradient Colors map
 $theme-gradient-colors: (
+  "trackutemblue": ($trackutemblue-gradient,
+    $trackutemblue-gradient-state,
+  ),
   "primary": ($primary-gradient,
     $primary-gradient-state,
   ),
@@ -600,6 +614,7 @@ $text-gradient-bg-clip: text !default;
 $text-gradient-text-fill: transparent !default;
 $text-gradient-position: relative !default;
 $text-gradient-zindex: 1 !default;
+$text-gradient-bg-trackutemblue: linear-gradient(310deg, $trackutemblue-gradient-state, $trackutemblue-gradient) !default;
 $text-gradient-bg-primary: linear-gradient(310deg, #7928ca, #ff0080) !default;
 $text-gradient-bg-info: linear-gradient(310deg, #2152ff, #21d4fd) !default;
 $text-gradient-bg-success: linear-gradient(310deg, #17ad37, #c1e823) !default;
@@ -696,6 +711,7 @@ $table-bg-level: -9 !default;
 $table-bg-scale: -80% !default;
 
 $table-variants: (
+  "trackutemblue": shift-color($trackutemblue, $table-bg-scale),
   "primary": shift-color($primary, $table-bg-scale),
   "secondary": shift-color($secondary, $table-bg-scale),
   "success": shift-color($success, $table-bg-scale),

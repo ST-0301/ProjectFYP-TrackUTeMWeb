@@ -28,14 +28,12 @@ const errorMessage = ref("");
 
 // Lifecycle hooks
 onBeforeMount(() => {
-  store.state.hideConfigButton = true;
   store.state.showNavbar = false;
   store.state.showSidenav = false;
   store.state.showFooter = false;
   body.classList.remove("bg-gray-100");
 });
 onBeforeUnmount(() => {
-  store.state.hideConfigButton = false;
   store.state.showNavbar = true;
   store.state.showSidenav = true;
   store.state.showFooter = true;
@@ -89,7 +87,7 @@ const handleSignIn = async () => {
     errorMessage.value = "Please enter both email and password.";
     return;
   } else if (!validateEmail(email.value)) {
-    errorMessage.value = "Please use a valid UTEM email (@utem.edu.my)";
+    errorMessage.value = "Please use a valid UTeM email (@utem.edu.my)";
     return;
   }
   isLoading.value = true;
@@ -99,7 +97,6 @@ const handleSignIn = async () => {
     const persistenceType = rememberMe.value
       ? browserLocalPersistence
       : browserSessionPersistence;
-    console.log("Setting persistence to:", persistenceType);
     await setPersistence(auth, persistenceType);
 
     const q = query(adminCollection, where("email", "==", email.value));

@@ -20,6 +20,7 @@
     "build": "cross-env CI=false; cross-env PUBLIC_URL=/ vue-cli-service build",
     "lint": "vue-cli-service lint",
     "prettify": "prettier --write .",
+    "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {

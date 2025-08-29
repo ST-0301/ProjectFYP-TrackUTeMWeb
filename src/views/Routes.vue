@@ -480,7 +480,7 @@ watch([sortColumn, sortDirection], () => {
                     <div class="card-header pb-0">
                         <div class="d-flex justify-content-between align-items-center">
                             <h6>Route List</h6>
-                            <argon-button color="success" size="sm" @click="addRoute">
+                            <argon-button color="trackutemlightblue" size="sm" class="text-white" @click="addRoute">
                                 <i class="ni ni-fat-add"></i> Add Route
                             </argon-button>
                         </div>
@@ -526,7 +526,7 @@ watch([sortColumn, sortDirection], () => {
                                         <td>
                                             <p class="text-sm font-weight-bold mb-0">
                                                 {{getPreviewRPointNames((route.rpoints || []).map(id => ({
-                                                    type: 'regular', id: id
+                                                type: 'regular', id: id
                                                 })))}}
                                             </p>
                                         </td>
@@ -625,7 +625,7 @@ watch([sortColumn, sortDirection], () => {
                                                 <argon-input v-model="currentRoute.name" type="text"
                                                     placeholder="Route name" />
                                                 <div v-if="errors.name" class="text-danger text-sm mt-1">{{ errors.name
-                                                }}
+                                                    }}
                                                 </div>
                                             </div>
 
@@ -675,7 +675,7 @@ watch([sortColumn, sortDirection], () => {
                                                         class="list-group-item d-flex justify-content-between align-items-center">
                                                         <div class="d-flex align-items-center">
                                                             <span class="badge bg-gradient-success me-2">{{ index + 1
-                                                            }}</span>
+                                                                }}</span>
                                                             <span v-if="rPointData.type === 'regular'">
                                                                 {{ getRPointName(rPointData) }}
                                                             </span>

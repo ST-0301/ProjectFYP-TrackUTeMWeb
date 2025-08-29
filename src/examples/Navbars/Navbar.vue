@@ -11,7 +11,6 @@ const showMenu = ref(false);
 const store = useStore();
 const router = useRouter();
 const minimizeSidebar = () => store.commit("sidebarMinimize");
-const toggleConfigurator = () => store.commit("toggleConfigurator");
 const closeMenu = () => {
   setTimeout(() => {
     showMenu.value = false;
@@ -69,31 +68,12 @@ onMounted(() => {
       <Breadcrumbs />
 
       <div class="mt-2 collapse navbar-collapse mt-sm-0 me-md-0 me-sm-4" id="navbar">
-        <div class="pe-md-3 d-flex align-items-center ms-md-auto">
-          <div class="input-group">
-            <span class="input-group-text text-body">
-              <i class="fas fa-search" aria-hidden="true"></i>
-            </span>
-            <input type="text" class="form-control" placeholder="Type here..." />
-          </div>
-        </div>
-        <ul class="navbar-nav justify-content-end">
+        <ul class="navbar-nav justify-content-end ms-md-auto">
           <li class="nav-item d-flex align-items-center">
             <router-link v-if="!user" :to="{ name: 'Signin' }" class="px-0 nav-link font-weight-bold text-white">
               <i class="fa fa-user me-sm-2"></i>
               <span class="d-sm-inline d-none">Sign In</span>
             </router-link>
-            <!-- <router-link v-else :to="{ name: 'Profile' }" class="px-0 nav-link font-weight-bold text-white">
-              <i class="fa fa-user me-sm-2"></i>
-              <span class="d-sm-inline d-none">
-                {{ getUserDisplayName() }}
-              </span>
-            </router-link>
-
-            <a href="#" @click.prevent="handleLogout" class="px-0 nav-link font-weight-bold text-white">
-              <i class="fas fa-sign-out-alt me-sm-2"></i>
-              <span class="d-sm-inline d-none">Logout</span>
-            </a> -->
 
             <div v-else class="nav-item dropdown">
               <a href="#" class="px-0 nav-link font-weight-bold text-white" :class="[showMenu ? 'show' : '']"
@@ -126,11 +106,6 @@ onMounted(() => {
                 <i class="sidenav-toggler-line bg-white"></i>
                 <i class="sidenav-toggler-line bg-white"></i>
               </div>
-            </a>
-          </li>
-          <li class="px-3 nav-item d-flex align-items-center">
-            <a class="p-0 nav-link text-white" @click="toggleConfigurator">
-              <i class="cursor-pointer fa fa-cog fixed-plugin-button-nav"></i>
             </a>
           </li>
         </ul>

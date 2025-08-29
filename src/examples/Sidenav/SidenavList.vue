@@ -18,14 +18,6 @@ const getRoute = () => {
             <i class="ni ni-tv-2 text-primary text-sm opacity-10"></i>
           </template>
 </sidenav-item>
-</li>
-
-<li class="nav-item">
-  <sidenav-item to="/tables" :class="getRoute() === 'tables' ? 'active' : ''" navText="Tables [Template]">
-    <template v-slot:icon>
-            <i class="ni ni-calendar-grid-58 text-warning text-sm opacity-10"></i>
-          </template>
-  </sidenav-item>
 </li> -->
 
       <li class="nav-item">
@@ -64,7 +56,7 @@ const getRoute = () => {
       <li class="nav-item">
         <sidenav-item to="/drivers" :class="getRoute() === 'drivers' ? 'active' : ''" navText="Drivers">
           <template v-slot:icon>
-            <i class="fas fa-user-tie text-primary text-sm opacity-10"></i>
+            <i class="fas fa-user-tie text-success text-sm opacity-10"></i>
           </template>
         </sidenav-item>
       </li>
@@ -90,22 +82,6 @@ const getRoute = () => {
           </template>
         </sidenav-item>
       </li>
-
-      <!-- <li class="nav-item">
-        <sidenav-item to="/signin" :class="getRoute() === 'signin' ? 'active' : ''" navText="Sign In">
-          <template v-slot:icon>
-            <i class="ni ni-single-copy-04 text-danger text-sm opacity-10"></i>
-          </template>
-        </sidenav-item>
-      </li> -->
-
-      <!-- <li class="nav-item">
-        <sidenav-item to="/signup" :class="getRoute() === 'signup' ? 'active' : ''" navText="Sign Up">
-          <template v-slot:icon>
-            <i class="ni ni-collection text-info text-sm opacity-10"></i>
-          </template>
-        </sidenav-item>
-      </li> -->
     </ul>
   </div>
 </template>

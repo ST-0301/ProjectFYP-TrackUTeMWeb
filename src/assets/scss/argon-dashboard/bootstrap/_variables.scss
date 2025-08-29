@@ -36,6 +36,8 @@ $grays: (
 // fusv-enable
 
 // scss-docs-start color-variables
+$bluetrackutem: #1D58CA !default;
+$lightbluetrackutem: #4591F2 !default;
 $blue: #0d6efd !default;
 $indigo: #6610f2 !default;
 $purple: #6f42c1 !default;
@@ -50,6 +52,8 @@ $cyan: #0dcaf0 !default;
 
 // scss-docs-start colors-map
 $colors: (
+  "bluetrackutem": $bluetrackutem,
+  "lightbluetrackutem": $lightbluetrackutem,
   "blue": $blue,
   "indigo": $indigo,
   "purple": $purple,
@@ -67,6 +71,8 @@ $colors: (
 // scss-docs-end colors-map
 
 // scss-docs-start theme-color-variables
+$trackutemblue: $bluetrackutem !default;
+$trackutemlightblue: $lightbluetrackutem !default;
 $primary: $blue !default;
 $secondary: $gray-600 !default;
 $success: $green !default;
@@ -79,6 +85,7 @@ $dark: $gray-900 !default;
 
 // scss-docs-start theme-colors-map
 $theme-colors: (
+  "trackutemblue": $trackutemblue,
   "primary": $primary,
   "secondary": $secondary,
   "success": $success,
@@ -751,6 +758,7 @@ $table-bg-scale: -80% !default;
 
 // scss-docs-start table-loop
 $table-variants: (
+  "trackutemblue": shift-color($trackutemblue, $table-bg-scale),
   "primary": shift-color($primary, $table-bg-scale),
   "secondary": shift-color($secondary, $table-bg-scale),
   "success": shift-color($success, $table-bg-scale),

@@ -10,6 +10,10 @@ const {onDocumentUpdated} = require("firebase-functions/v2/firestore");
 const {DateTime} = require("luxon");
 const admin = require("firebase-admin");
 const functions = require("firebase-functions");
+const NOTIFICATION_THROTTLE_MINUTES = 15;
+const LATENESS_THRESHOLD_MINUTES = 5;
+const LATENESS_INCREASE_THRESHOLD = 10;
+const ARCHIVE_NOTIFICATIONS_DAYS = 30;
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -69,7 +73,7 @@ exports.onLatenessUpdate = onDocumentUpdated(
 
       const latenessMinutes = updatedRPoint.latenessMinutes;
 
-      if (latenessMinutes < 5) {
+      if (latenessMinutes < LATENESS_THRESHOLD_MINUTES) {
         console.log(
             `Lateness of ${latenessMinutes} minutes is below the threshold. Ignoring.`,
         );
@@ -147,8 +151,9 @@ async function saveAndSendStuNotifications(
         .toObject().minutes;
     const latenessDifference =
       latenessMinutes - lastNotification.latenessMinutes;
-    const hasTimeGapElapsed = timeGapMinutes >= 15;
-    const hasLatenessIncreasedSignificantly = latenessDifference >= 10;
+    const hasTimeGapElapsed = timeGapMinutes >= NOTIFICATION_THROTTLE_MINUTES;
+    const hasLatenessIncreasedSignificantly =
+      latenessDifference >= LATENESS_INCREASE_THRESHOLD;
 
     console.log(`Checking throttle rules for key: ${key}`);
     console.log(
@@ -209,6 +214,7 @@ async function saveAndSendStuNotifications(
     busPlateNumber: busPlateNumber,
     scheduledDatetime: scheduleData.scheduledDatetime,
     latenessMinutes: latenessMinutes,
+    cancelReason: null,
     created: admin.firestore.FieldValue.serverTimestamp(),
   };
 
@@ -719,7 +725,7 @@ exports.sendDrvNotification = onCall(
 );
 
 /**
- * Cloud Function to archive notifications older than 30 days to notificationsArchived collection
+ * Cloud Function to archive notifications older than ARCHIVE_NOTIFICATIONS_DAYS days to notificationsArchived collection
  * and delete them from the main notifications collection.
  *
  * This function runs daily to prevent unbounded growth of notifications.
@@ -731,7 +737,7 @@ exports.archiveOldNotifications = onSchedule(
 
       const NOTIFICATIONS_COLLECTION = "notifications";
       const ARCHIVED_COLLECTION = "notificationsArchived";
-      const cutoffDate = DateTime.now().minus({days: 30}).toJSDate();
+      const cutoffDate = DateTime.now().minus({days: ARCHIVE_NOTIFICATIONS_DAYS}).toJSDate();
       const cutoffTimestamp = admin.firestore.Timestamp.fromDate(cutoffDate);
 
       try {
@@ -741,7 +747,7 @@ exports.archiveOldNotifications = onSchedule(
             .get();
 
         if (oldNotificationsSnapshot.empty) {
-          console.log("No notifications older than 30 days found.");
+          console.log("No notifications older than ${ARCHIVE_NOTIFICATIONS_DAYS} days found.");
           return null;
         }
 
@@ -775,67 +781,6 @@ exports.archiveOldNotifications = onSchedule(
       } catch (error) {
         console.error("Error archiving notifications:", error);
         throw new Error("Failed to archive notifications.");
-      }
-    },
-);
-
-exports.archiveNotificationsManual = onCall(
-    {region: "asia-southeast1"},
-    async (request) => {
-      console.log("Manual archive process triggered");
-      const NOTIFICATIONS_COLLECTION = "notifications";
-      const ARCHIVED_COLLECTION = "notificationsArchived";
-      const cutoffDate = DateTime.now().minus({days: 30}).toJSDate();
-      const cutoffTimestamp = admin.firestore.Timestamp.fromDate(cutoffDate);
-
-      try {
-        const oldNotificationsSnapshot = await db
-            .collection(NOTIFICATIONS_COLLECTION)
-            .where("created", "<", cutoffTimestamp)
-            .get();
-
-        if (oldNotificationsSnapshot.empty) {
-          console.log("No notifications older than 30 days found.");
-          return {success: true, message: "No notifications to archive"};
-        }
-
-        console.log(
-            `Found ${oldNotificationsSnapshot.size} notifications to archive.`,
-        );
-
-        const batch = db.batch();
-        let archivedCount = 0;
-
-        for (const doc of oldNotificationsSnapshot.docs) {
-          const notificationData = doc.data();
-          const archivedRef = db.collection(ARCHIVED_COLLECTION).doc(doc.id);
-          batch.set(archivedRef, {
-            ...notificationData,
-            originalId: doc.id,
-            archivedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-          const originalRef = db.collection(NOTIFICATIONS_COLLECTION).doc(doc.id);
-          batch.delete(originalRef);
-          archivedCount++;
-        }
-
-        if (archivedCount > 0) {
-          await batch.commit();
-          console.log(`Successfully archived ${archivedCount} notifications.`);
-          return {
-            success: true,
-            message: `Archived ${archivedCount} notifications`,
-          };
-        } else {
-          console.log("No notifications were archived.");
-          return {success: true, message: "No notifications to archive"};
-        }
-      } catch (error) {
-        console.error("Error archiving notifications:", error);
-        throw new functions.https.HttpsError(
-            "internal",
-            "Failed to archive notifications.",
-        );
       }
     },
 );

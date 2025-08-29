@@ -5,7 +5,7 @@
       <div class="row">
         <div class="mx-auto mb-4 text-center col-lg-8">
           <a href="https://www.utem.edu.my" target="_blank" class="mb-2 text-secondary me-xl-5 me-3 mb-sm-0">
-            UTEM Website
+            UTeM Website
           </a>
           <a href="/privacy-policy" target="_blank" class="mb-2 text-secondary me-xl-5 me-3 mb-sm-0">
             Privacy Policy

@@ -3,9 +3,7 @@ import { createStore } from "vuex";
 export default createStore({
   state: {
     isLoading: false,
-    hideConfigButton: false,
     isPinned: false,
-    showConfig: false,
     sidebarType: "bg-white",
     mcolor: "",
     darkMode: false,
@@ -21,9 +19,6 @@ export default createStore({
   mutations: {
     setLoading(state, isLoading) {
       state.isLoading = isLoading;
-    },
-    toggleConfigurator(state) {
-      state.showConfig = !state.showConfig;
     },
     sidebarMinimize(state) {
       let sidenav_show = document.querySelector("#app");

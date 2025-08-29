@@ -186,13 +186,13 @@ const validateForm = async () => {
     } else {
         errors.value.name = '';
     }
-    // const emailRegex = /^[^\s@]+@utem\.edu\.my$/;
-    // if (!emailRegex.test(currentAdmin.value.email)) {
-    //     errors.value.email = 'Valid UTEM email required';
-    //     isValid = false;
-    // } else {
-    //     errors.value.email = '';
-    // }
+    const emailRegex = /^[^\s@]+@utem\.edu\.my$/;
+    if (!emailRegex.test(currentAdmin.value.email)) {
+        errors.value.email = 'Valid UTeM email required';
+        isValid = false;
+    } else {
+        errors.value.email = '';
+    }
     return isValid;
 };
 
@@ -383,7 +383,8 @@ watch(() => props.refreshKey, () => {
             <div class="card-header pb-0">
                 <div class="d-flex justify-content-between align-items-center">
                     <h6>Admin Management</h6>
-                    <argon-button color="success" size="sm" @click="showAddAdminModal = true">
+                    <argon-button color="trackutemlightblue" size="sm" class="text-white"
+                        @click="showAddAdminModal = true">
                         <i class="ni ni-fat-add"></i> Create Admin Account
                     </argon-button>
                 </div>
@@ -442,7 +443,7 @@ watch(() => props.refreshKey, () => {
                                 <td>
                                     <span class="badge badge-sm" :class="{
                                         'bg-gradient-success': admin.status === 'active',
-                                        'bg-gradient-primary': admin.status === 'pending',
+                                        'bg-gradient-warning': admin.status === 'pending',
                                         'bg-gradient-secondary': admin.status === 'disabled'
                                     }">
                                         {{ admin.status }}
@@ -549,7 +550,7 @@ watch(() => props.refreshKey, () => {
                             </div>
                             <div class="mb-3">
                                 <label class="form-label">Email (@utem.edu.my)</label>
-                                <argon-input v-model="currentAdmin.email" type="email" placeholder="UTEM email"
+                                <argon-input v-model="currentAdmin.email" type="email" placeholder="UTeM email"
                                     required />
                                 <div v-if="errors.email" class="text-danger text-sm mt-1">{{ errors.email }}</div>
                             </div>

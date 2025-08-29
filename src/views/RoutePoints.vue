@@ -344,8 +344,8 @@ watch([sortColumn, sortDirection], () => {
                 <div class="card">
                     <div class="card-header pb-0">
                         <div class="d-flex justify-content-between align-items-center">
-                            <h6>Location List</h6>
-                            <argon-button color="success" size="sm" @click="addRPoint">
+                            <h6>Bus Stop List</h6>
+                            <argon-button color="trackutemlightblue" size="sm" class="text-white" @click="addRPoint">
                                 <i class="ni ni-fat-add"></i> Add Location
                             </argon-button>
                         </div>
@@ -357,7 +357,7 @@ watch([sortColumn, sortDirection], () => {
                                     <tr>
                                         <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
                                             @click="handleSort('name')">
-                                            Location Name<i v-if="sortColumn === 'name'" class="fas ms-1"
+                                            Bus Stop Name<i v-if="sortColumn === 'name'" class="fas ms-1"
                                                 :class="sortDirection === 'asc' ? 'fa-arrow-up' : 'fa-arrow-down'"></i>
                                         </th>
                                         <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7 ps-2 cursor-pointer"
@@ -496,7 +496,7 @@ watch([sortColumn, sortDirection], () => {
                                                 <argon-input v-model="currentRPoint.name" type="text"
                                                     placeholder="Location name" required />
                                                 <div v-if="errors.name" class="text-danger text-sm mt-1">{{ errors.name
-                                                }}
+                                                    }}
                                                 </div>
                                             </div>
 
