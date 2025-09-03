@@ -2521,7 +2521,7 @@ watch(() => createScheduleForm.value.time, (newTime) => {
                         </argon-button>
                         <argon-button color="danger" v-else
                             @click="scheduleToActOn ? deleteOrCancelSchedule() : deleteAssignment()"
-                            :disabled="isLoading || !cancelReason">
+                            :disabled="isLoading ">
                             <span v-if="!isLoading">
                                 {{
                                 scheduleToActOn
