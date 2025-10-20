@@ -1554,18 +1554,19 @@ const openUpdateModal = async (group) => {
         await fetchPairings();
 
         selectedScheduleForUpdate.value = group[0];
+        selectedScheduleGroup.value = group;
         modalAssignments.value = [];
-        let q = query(scheduleCollection,
-            where('routeId', '==', routeId),
-            where('type', '==', selectedScheduleForUpdate.value.type),
-            where('scheduledDatetime', '==', selectedScheduleForUpdate.value.scheduledDatetime)
-        );
-        const querySnapshot = await getDocs(q);
-        const groupSchedules = [];
-        querySnapshot.forEach(docSnap => {
-            groupSchedules.push({ id: docSnap.id, ...docSnap.data() });
-        });
-        groupSchedules.forEach(sched => {
+        // let q = query(scheduleCollection,
+        //     where('routeId', '==', routeId),
+        //     where('type', '==', selectedScheduleForUpdate.value.type),
+        //     where('scheduledDatetime', '==', selectedScheduleForUpdate.value.scheduledDatetime)
+        // );
+        // const querySnapshot = await getDocs(q);
+        // const groupSchedules = [];
+        // querySnapshot.forEach(docSnap => {
+        //     groupSchedules.push({ id: docSnap.id, ...docSnap.data() });
+        // });
+        group.forEach(sched => {
             if (sched.busDriverPairId) {
                 const driverId = getPairDriverId(sched.busDriverPairId);
                 const busId = getPairBusId(sched.busDriverPairId);
@@ -1583,7 +1584,7 @@ const openUpdateModal = async (group) => {
         if (modalAssignments.value.length === 0) {
             modalAssignments.value.push({ driverId: '', busId: '', pairId: null, scheduleId: null, status: '' });
         }
-        selectedScheduleGroup.value = groupSchedules;
+        selectedScheduleGroup.value = group;
         showUpdateScheduleModal.value = true;
 
         const scheduledDate = selectedScheduleForUpdate.value.scheduledDatetime.toDate();
