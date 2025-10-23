@@ -73,13 +73,34 @@ Make sure you have the following installed:
     npm install
     ```
 
-3.  **Configure Firebase:**
-    Create a `.env` file in the root of the project and add your Firebase project credentials:
+3.  **Configure Environment Variables:**
+    Create a `.env` file in the root of the project. This is used for keys like the Google Maps API key.
     ```env
-    VITE_API_KEY="[YOUR_FIREBASE_API_KEY]"
-    VITE_AUTH_DOMAIN="[YOUR_FIREBASE_AUTH_DOMAIN]"
-    VITE_PROJECT_ID="[YOUR_FIREBASE_PROJECT_ID]"
-    # ...add other Firebase environment variables here
+    VUE_APP_GOOGLE_MAPS_API_KEY="[YOUR_GOOGLE_MAPS_API_KEY]"
+    ```
+
+4.  **Configure Firebase:**
+    The Firebase configuration is located in a JavaScript file, (e.g., `src/firebase.js` or `src/firebase/index.js`). Find the `firebaseConfig` object and replace it with your own project's credentials from the Firebase console.
+
+    ```javascript
+    // e.g., in src/firebase.js
+    import { initializeApp } from "firebase/app";
+    
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "[YOUR_FIREBASE_API_KEY]",
+      authDomain: "[YOUR_FIREBASE_AUTH_DOMAIN]",
+      databaseURL: "[YOUR_FIREBASE_DATABASE_URL]",
+      projectId: "[YOUR_FIREBASE_PROJECT_ID]",
+      storageBucket: "[YOUR_FIREBASE_STORAGE_BUCKET]",
+      messagingSenderId: "[YOUR_FIREBASE_MESSAGING_SENDER_ID]",
+      appId: "[YOUR_FIREBASE_APP_ID]",
+      measurementId: "[YOUR_FIREBASE_MEASUREMENT_ID]"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    // ... rest of your file
     ```
 
 ## ⚙️ Available Scripts
@@ -102,6 +123,22 @@ Once installed, you can run the following commands:
     npm run deploy
     ```
 
+## 🗃️ Firestore Database Structure
+
+The project uses Firebase Firestore to store data. The data is organized into the following top-level collections:
+
+| Collection | Purpose |
+| :--- | :--- |
+| `/admins` | Stores administrator user accounts and permissions. |
+| `/drivers` | Stores driver information (name, contact, etc.). |
+| `/buses` | Stores details for each bus (plate number, capacity). |
+| `/routes` | Defines the different bus routes (e.g., "Hop On Induk"). |
+| `/routePoints` | Stores the specific geographic coordinates (stops) for each route. |
+| `/schedules` | Manages the bus schedules, linking routes, buses, and times. |
+| `/busDriverPairings` | Tracks the real-time assignment of a specific driver to a specific bus. |
+
+**Note:** You do not need to manually create these collections in your Firebase console. Firestore will automatically create them when the first document is added by the application.
+
 ## 👩‍💻 Author
 
 Ng Sue Ting
@@ -111,7 +148,7 @@ Final Year Project — Universiti Teknikal Malaysia Melaka (UTeM)
 
 🌐 Live Demo: https://st-0301.github.io/ProjectFYP-TrackUTeMWeb/
 
-## 🪪 License
+## 📄 License
 
 This project is released under the MIT License.
 You are free to use and modify this code for educational or non-commercial purposes with proper attribution.
