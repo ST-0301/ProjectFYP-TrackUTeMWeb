@@ -15,11 +15,15 @@ Built with **Vue.js** and **Firebase**, this project aims to reduce waiting time
 ![Dashboard Screenshot](./docs/dashboard-preview.png)
 ![Schedule Management](./docs/schedule-management.png)
 
+---
+
 ## 🌐 Live Demo
 
 You can try the live system hosted on GitHub Pages:
 
 [![View Live Demo](https://img.shields.io/badge/View%20Live%20Demo-20c997?style=for-the-badge&logo=githubpages)](https://st-0301.github.io/ProjectFYP-TrackUTeMWeb/)
+
+---
 
 ## ✨ Features
 
@@ -29,6 +33,8 @@ You can try the live system hosted on GitHub Pages:
 * 🔔 Push notification support for updates and alerts
 * 📱 Responsive web interface (desktop and mobile)
 * 🔒 Firebase Authentication for secure access control
+
+---
 
 ## 🛠️ Tech Stack
 
@@ -45,6 +51,8 @@ This project is built with modern web technologies:
 * **Authentication:** Firebase Auth
 * **Notifications:** Firebase Cloud Messaging (FCM)
 * **Deployment:** GitHub Pages
+
+---
 
 ## 🚀 Getting Started
 
@@ -103,6 +111,8 @@ Make sure you have the following installed:
     // ... rest of your file
     ```
 
+---
+
 ## ⚙️ Available Scripts
 
 Once installed, you can run the following commands:
@@ -123,6 +133,8 @@ Once installed, you can run the following commands:
     npm run deploy
     ```
 
+---
+
 ## 🗃️ Firestore Database Structure
 
 The project uses Firebase Firestore to store data. The data is organized into the following top-level collections:
@@ -139,6 +151,19 @@ The project uses Firebase Firestore to store data. The data is organized into th
 
 **Note:** You do not need to manually create these collections in your Firebase console. Firestore will automatically create them when the first document is added by the application.
 
+---
+
+## 🔗 Related Projects
+
+This project is part of a larger system.
+
+| Platform | Repository | Description |
+| :--- | :--- | :--- |
+| 🌐 **Web** | [ProjectFYP-TrackUTeMWeb](https://github.com/st-0301/ProjectFYP-TrackUTeMWeb) | Admin panel for managing buses, drivers, routes, and schedules. |
+| 📱 **Mobile** | [ProjectFYP-TrackUTeM](https://github.com/ST-0301/ProjectFYP-TrackUTeM) | Android app for students and drivers. |
+
+---
+
 ## 👩‍💻 Author
 
 Ng Sue Ting
@@ -146,7 +171,9 @@ Final Year Project — Universiti Teknikal Malaysia Melaka (UTeM)
 
 🔗 GitHub: [@ST-0301](https://github.com/st-0301)
 
-🌐 Live Demo: https://st-0301.github.io/ProjectFYP-TrackUTeMWeb/
+🌐 Web System: [TrackUTeM Web Demo](https://st-0301.github.io/ProjectFYP-TrackUTeMWeb/)
+
+---
 
 ## 📄 License
 
